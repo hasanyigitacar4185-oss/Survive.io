@@ -9,7 +9,7 @@ const boostBtn = document.getElementById('boost-btn');
 const globalList = document.getElementById('global-list');
 
 let allPlayers = {}, allFoods = [], mapSize = 5000;
-let isAlive = false, controlType = "mouse", manager = null, globalScores = [];
+let isAlive = false, controlType = "mouse", globalScores = [];
 
 function resize() {
     canvas.width = window.innerWidth; canvas.height = window.innerHeight;
@@ -20,9 +20,13 @@ window.addEventListener('resize', resize); resize();
 
 document.getElementById('btn-global').onclick = () => {
     document.getElementById('global-modal').style.display = 'flex';
-    globalList.innerHTML = globalScores.length ? globalScores.map((s,i) => `<div class="global-item"><span>${i+1}. ${s.name}</span><span>${s.score}</span></div>`).join('') : "Henüz rekor yok.";
+    globalList.innerHTML = globalScores.length ? globalScores.map((s,i) => `<div class="global-item"><span>${i+1}. ${s.name}</span><span>${s.score}</span></div>`).join('') : "Yükleniyor...";
 };
 
+// --- SOCKET OLAYLARI ---
+socket.on('initFoods', (f) => { allFoods = f; }); // Tüm listeyi bir kez al
+socket.on('foodCollected', (data) => { allFoods[data.i] = data.newF; }); // Sadece değişeni güncelle
+socket.on('updatePlayers', (p) => { allPlayers = p; }); // Oyuncuları güncelle
 socket.on('globalScoresUpdate', (s) => globalScores = s);
 
 document.getElementById('btn-play').onclick = () => {
@@ -33,9 +37,9 @@ document.getElementById('btn-play').onclick = () => {
 
     if (controlType === "joystick") {
         joyZone.style.display = 'block';
-        manager = nipplejs.create({ zone: joyZone, mode: 'static', position: {left:'50%', top:'50%'}, color:'white', size:100 });
-        manager.on('move', (e, d) => socket.emit('playerMove', { x: d.vector.x*100, y: -d.vector.y*100 }));
-        manager.on('end', () => socket.emit('playerMove', { x: 0, y: 0 }));
+        nipplejs.create({ zone: joyZone, mode: 'static', position: {left:'50%', top:'50%'}, color:'white', size:100 })
+            .on('move', (e, d) => socket.emit('playerMove', { x: d.vector.x*100, y: -d.vector.y*100 }))
+            .on('end', () => socket.emit('playerMove', { x: 0, y: 0 }));
     }
     if (isMobile) boostBtn.style.display = 'flex';
     socket.emit('joinGame', name);
@@ -45,6 +49,7 @@ document.getElementById('btn-play').onclick = () => {
     isAlive = true;
 };
 
+// Boost
 window.addEventListener('keydown', (e) => { if(e.code === "Space") socket.emit('startBoost'); });
 window.addEventListener('keyup', (e) => { if(e.code === "Space") socket.emit('stopBoost'); });
 boostBtn.ontouchstart = () => socket.emit('startBoost');
@@ -54,7 +59,6 @@ window.addEventListener('mousemove', (e) => {
     if (isAlive && controlType === "mouse") socket.emit('playerMove', { x: e.clientX - canvas.width/2, y: e.clientY - canvas.height/2 });
 });
 
-socket.on('update', (data) => { allPlayers = data.players; allFoods = data.foods; mapSize = data.MAP_SIZE; });
 socket.on('dead', (d) => { isAlive = false; document.getElementById('final-score').innerText = `Skor: ${Math.floor(d.score)}`; document.getElementById('death-overlay').style.display = 'flex'; boostBtn.style.display = 'none'; joyZone.style.display = 'none'; });
 
 function draw() {
@@ -70,22 +74,25 @@ function draw() {
         ctx.scale(zoom, zoom);
         ctx.translate(-me.x, -me.y);
 
-        // Grid
-        ctx.strokeStyle = '#222'; ctx.lineWidth = 1;
+        // Arka Plan
+        ctx.strokeStyle = '#222'; ctx.lineWidth = 2;
         ctx.beginPath();
-        for(let x=0; x<=mapSize; x+=200) { ctx.moveTo(x,0); ctx.lineTo(x,mapSize); }
-        for(let y=0; y<=mapSize; y+=200) { ctx.moveTo(0,y); ctx.lineTo(mapSize,y); }
+        for(let x=0; x<=mapSize; x+=250) { ctx.moveTo(x,0); ctx.lineTo(x,mapSize); }
+        for(let y=0; y<=mapSize; y+=250) { ctx.moveTo(0,y); ctx.lineTo(mapSize,y); }
         ctx.stroke();
 
         ctx.strokeStyle = '#f33'; ctx.lineWidth = 15; ctx.strokeRect(0,0,mapSize,mapSize);
 
-        allFoods.forEach(f => {
-            ctx.fillStyle = f.color; ctx.beginPath(); ctx.arc(f.x, f.y, f.radius, 0, Math.PI*2); ctx.fill();
-        });
-
-        for (let id in allPlayers) {
-            if (allPlayers[id]) drawJellyPlayer(allPlayers[id], id === socket.id);
+        // Yiyecekler
+        for(let i=0; i<allFoods.length; i++) {
+            let f = allFoods[i];
+            // Sadece ekrandakileri çiz (PERFORMANS)
+            if (Math.abs(me.x - f.x) < 1000 && Math.abs(me.y - f.y) < 1000) {
+                ctx.fillStyle = f.c; ctx.beginPath(); ctx.arc(f.x, f.y, f.r, 0, Math.PI*2); ctx.fill();
+            }
         }
+
+        for (let id in allPlayers) drawJellyPlayer(allPlayers[id], id === socket.id);
         ctx.restore();
         updateLeaderboard(me);
         drawMinimap(me);
@@ -94,17 +101,16 @@ function draw() {
 }
 
 function drawJellyPlayer(p, isMe) {
-    const points = 24; // Nokta sayısını azalttık (Performans)
+    const points = 20; 
     const time = Date.now() * 0.004;
     const vertices = [];
     const moveAngle = Math.atan2(p.targetY, p.targetX);
 
     for (let i = 0; i < points; i++) {
         let angle = (i / points) * Math.PI * 2;
-        let wobble = Math.sin(time + i * 0.8) * (p.radius * 0.03);
+        let wobble = Math.sin(time + i * 1) * (p.radius * 0.03);
         let stretch = (isMe && (Math.abs(p.targetX) > 5 || Math.abs(p.targetY) > 5)) ? 
             Math.cos(angle - moveAngle) * (p.radius * (p.isBoosting ? 0.22 : 0.12)) : 0;
-        
         let r = p.radius + wobble + stretch;
         vertices.push({ x: p.x + Math.cos(angle) * r, y: p.y + Math.sin(angle) * r });
     }
@@ -122,7 +128,6 @@ function drawJellyPlayer(p, isMe) {
     ctx.save();
     ctx.translate(p.x, p.y);
     ctx.rotate(moveAngle);
-    // Gözler
     ctx.fillStyle="white"; ctx.beginPath(); ctx.arc(p.radius*0.35, -p.radius*0.2, p.radius*0.2, 0, Math.PI*2); ctx.arc(p.radius*0.35, p.radius*0.2, p.radius*0.2, 0, Math.PI*2); ctx.fill();
     ctx.fillStyle="black"; ctx.beginPath(); ctx.arc(p.radius*0.35+3, -p.radius*0.2, p.radius*0.1, 0, Math.PI*2); ctx.arc(p.radius*0.35+3, p.radius*0.2, p.radius*0.1, 0, Math.PI*2); ctx.fill();
     ctx.restore();
