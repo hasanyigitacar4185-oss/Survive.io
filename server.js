@@ -16,7 +16,7 @@ mongoose.connect(MONGODB_URI).then(() => console.log("✅ MongoDB Aktif")).catch
 const HighScore = mongoose.model('HighScore', new mongoose.Schema({ name: String, score: Number, date: { type: Date, default: Date.now } }));
 
 const MAP_SIZE = 5000;
-const FOOD_COUNT = 650;
+const FOOD_COUNT = 325; // Yiyecek sayısı 2 kat azaltıldı
 const INITIAL_RADIUS = 30;
 const EAT_MARGIN = 5;
 
@@ -31,11 +31,13 @@ function spawnFood(index) {
 
 for (let i = 0; i < FOOD_COUNT; i++) foods.push(spawnFood(i));
 
+async function getGlobalScores() {
+    try { return await HighScore.find().sort({ score: -1 }).limit(10); } catch(e) { return []; }
+}
+
 io.on('connection', async (socket) => {
-    try {
-        const scores = await HighScore.find().sort({ score: -1 }).limit(10);
-        socket.emit('globalScoresUpdate', scores);
-    } catch(e) {}
+    // Girişte rekorları gönder
+    socket.emit('globalScoresUpdate', await getGlobalScores());
 
     socket.on('joinGame', (username) => {
         players[socket.id] = {
@@ -44,7 +46,7 @@ io.on('connection', async (socket) => {
             color: `hsl(${Math.random() * 360}, 80%, 60%)`,
             radius: INITIAL_RADIUS, targetX: 0, targetY: 0, score: 0
         };
-        socket.emit('initFoods', foods); // Sadece girişte bir kez
+        socket.emit('initFoods', foods);
     });
 
     socket.on('playerMove', (data) => {
@@ -54,18 +56,16 @@ io.on('connection', async (socket) => {
         }
     });
 
-    socket.on('disconnect', () => { 
+    socket.on('disconnect', async () => { 
         if(players[socket.id] && players[socket.id].score > 30) {
             const p = players[socket.id];
-            new HighScore({ name: p.name, score: Math.floor(p.score) }).save()
-                .then(() => HighScore.find().sort({ score: -1 }).limit(10))
-                .then(s => io.emit('globalScoresUpdate', s));
+            await new HighScore({ name: p.name, score: Math.floor(p.score) }).save();
+            io.emit('globalScoresUpdate', await getGlobalScores());
         }
         delete players[socket.id]; 
     });
 });
 
-// Oyun Döngüsü - 60 FPS (Akıcı ve Hızlı)
 setInterval(() => {
     const playerIds = Object.keys(players);
     for (let id in players) {
@@ -74,8 +74,8 @@ setInterval(() => {
         let dist = Math.sqrt(p.targetX * p.targetX + p.targetY * p.targetY);
 
         if (dist > 5) {
-            // Hız 1.5 Kat Artırıldı (Base speed 9.5)
-            let speed = 9.5 * Math.pow(p.radius / INITIAL_RADIUS, -0.15);
+            // Hız eski dengeli haline (6) döndürüldü
+            let speed = 6 * Math.pow(p.radius / INITIAL_RADIUS, -0.15);
             let moveSpeed = dist < 50 ? (speed * dist / 50) : speed;
             p.x += Math.cos(angle) * moveSpeed;
             p.y += Math.sin(angle) * moveSpeed;
@@ -88,9 +88,9 @@ setInterval(() => {
             let f = foods[i];
             if (Math.abs(p.x - f.x) < p.radius && Math.abs(p.y - f.y) < p.radius) {
                 if (Math.hypot(p.x - f.x, p.y - f.y) < p.radius) {
-                    p.radius += 0.45; p.score += 1.8;
+                    p.radius += 0.4; p.score += 1.5;
                     const newF = spawnFood(i);
-                    io.emit('foodCollected', { i: i, newF: newF }); // Sadece yenen yemi bildir
+                    io.emit('foodCollected', { i: i, newF: newF });
                 }
             }
         }
@@ -101,7 +101,7 @@ setInterval(() => {
             if (!other) return;
             let distance = Math.hypot(p.x - other.x, p.y - other.y);
             if (distance < p.radius && p.score > other.score + EAT_MARGIN) {
-                p.score += Math.floor(other.score * 0.5) + 50;
+                p.score += Math.floor(other.score * 0.5) + 40;
                 p.radius += (other.radius * 0.4);
                 io.to(otherId).emit('dead', { score: other.score });
                 delete players[otherId];
