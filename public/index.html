@@ -2,43 +2,43 @@
 <html lang="tr">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Survive.io</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/nipplejs/0.10.1/nipplejs.min.js"></script>
     <style>
         body { margin: 0; overflow: hidden; background: #121212; font-family: sans-serif; touch-action: none; }
         canvas { display: block; }
-        #menu-overlay, #death-overlay, #global-modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); display: flex; align-items: center; justify-content: center; z-index: 100; color: white; }
-        .box { background: #1e1e1e; padding: 30px; border-radius: 15px; text-align: center; border: 2px solid #333; width: 85%; max-width: 350px; }
-        input { padding: 12px; width: 80%; border-radius: 8px; border: none; font-size: 18px; margin-bottom: 15px; text-align: center; background: #2a2a2a; color: white; }
-        button { padding: 12px 25px; font-size: 18px; cursor: pointer; background: #4CAF50; color: white; border: none; border-radius: 8px; font-weight: bold; margin: 5px; }
-        #leaderboard { position: fixed; top: 10px; right: 10px; background: rgba(0,0,0,0.6); padding: 10px; border-radius: 8px; width: 140px; font-size: 12px; z-index: 10; border: 1px solid rgba(255,255,255,0.1); }
-        .lb-item { display: flex; justify-content: space-between; margin-bottom: 3px; color: white !important; }
+        #menu-overlay, #death-overlay, #global-modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.95); display: flex; align-items: center; justify-content: center; z-index: 100; color: white; }
+        .box { background: #1e1e1e; padding: 25px; border-radius: 15px; text-align: center; border: 2px solid #333; width: 80%; max-width: 320px; }
+        input { padding: 12px; width: 85%; border-radius: 8px; border: none; font-size: 18px; margin-bottom: 15px; text-align: center; background: #2a2a2a; color: white; }
+        button { padding: 12px 25px; font-size: 18px; cursor: pointer; background: #4CAF50; color: white; border: none; border-radius: 8px; font-weight: bold; }
+        #leaderboard { position: fixed; top: 10px; right: 10px; background: rgba(0,0,0,0.6); padding: 8px; border-radius: 8px; width: 130px; font-size: 11px; z-index: 10; border: 1px solid rgba(255,255,255,0.1); }
+        .lb-item { display: flex; justify-content: space-between; margin-bottom: 2px; color: white !important; }
         .lb-own { color: #ffeb3b !important; font-weight: bold; border-top: 1px solid #444; margin-top: 5px; padding-top: 5px; }
-        #minimap { position: fixed; bottom: 10px; right: 10px; width: 130px; height: 130px; background: rgba(0,0,0,0.5); border: 2px solid #444; border-radius: 5px; z-index: 10; }
+        #minimap { position: fixed; bottom: 10px; right: 10px; width: 120px; height: 120px; background: rgba(0,0,0,0.5); border: 2px solid #444; border-radius: 5px; z-index: 10; }
         #joystick-zone { position: fixed; bottom: 30px; left: 30px; width: 120px; height: 120px; z-index: 50; display: none; }
         #orientation-warning { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #121212; z-index: 999; flex-direction: column; align-items: center; justify-content: center; }
     </style>
 </head>
 <body>
-    <div id="orientation-warning"><h2>Lütfen Yatay Döndürün</h2></div>
+    <div id="orientation-warning"><h2>Lütfen Cihazı Yatay Döndürün</h2></div>
     <div id="menu-overlay">
         <div class="box">
-            <h1 style="color: #4CAF50;">Survive.io</h1>
+            <h1 style="color: #4CAF50; margin-top:0;">Survive.io</h1>
             <input type="text" id="username" placeholder="İsminiz..." maxlength="12">
-            <div>Kontrol: <select id="control-type" style="padding:5px; background:#333; color:white;"><option value="auto">Otomatik</option><option value="mouse">Mouse</option><option value="joystick">Joystick</option></select></div>
-            <br><button id="btn-play">OYNA</button><br>
-            <button onclick="document.getElementById('global-modal').style.display='flex'" style="background:#ff9800; font-size:14px;">GLOBAL REKORLAR</button>
+            <div style="font-size:14px; margin-bottom:10px;">Kontrol: <select id="control-type" style="padding:4px; background:#333; color:white;"><option value="auto">Otomatik</option><option value="mouse">Mouse</option><option value="joystick">Joystick</option></select></div>
+            <button id="btn-play">OYNA</button><br>
+            <button onclick="document.getElementById('global-modal').style.display='flex'" style="background:#ff9800; font-size:13px; margin-top:10px;">GLOBAL REKORLAR</button>
         </div>
     </div>
     <div id="global-modal" style="display:none;">
-        <div class="box"><h2>EN İYİ 10</h2><div id="global-list" style="text-align:left;"></div><button onclick="document.getElementById('global-modal').style.display='none'" style="background:#555;">KAPAT</button></div>
+        <div class="box"><h3>EN İYİ 10</h3><div id="global-list" style="text-align:left; font-size:14px;"></div><button onclick="document.getElementById('global-modal').style.display='none'" style="background:#555; margin-top:10px;">KAPAT</button></div>
     </div>
     <div id="death-overlay" style="display:none;">
         <div class="box"><h1>ÖLDÜN!</h1><p id="final-score">Skor: 0</p><button onclick="location.reload()">TEKRAR DENE</button></div>
     </div>
     <div id="leaderboard" style="display:none;"><div id="lb-list"></div><div id="lb-player" class="lb-own"></div></div>
-    <div id="minimap" style="display:none;"><canvas id="minimap-canvas" width="130" height="130"></canvas></div>
+    <div id="minimap" style="display:none;"><canvas id="minimap-canvas" width="120" height="120"></canvas></div>
     <div id="joystick-zone"></div>
     <canvas id="gameCanvas"></canvas>
     <script src="/socket.io/socket.io.js"></script>
