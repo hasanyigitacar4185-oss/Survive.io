@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FlyorDie.io Clone</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #121212; }
+        canvas { display: block; background: #1a1a1a; cursor: none; }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+
+    <!-- Socket.io kütüphanesini çekiyoruz -->
+    <script src="/socket.io/socket.io.js"></script>
+    <!-- Oyun mantığını çekiyoruz -->
+    <script src="game.js"></script>
+</body>
+</html>
