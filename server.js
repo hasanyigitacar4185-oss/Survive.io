@@ -44,7 +44,7 @@ io.on('connection', async (socket) => {
             color: `hsl(${Math.random() * 360}, 80%, 60%)`,
             radius: INITIAL_RADIUS, targetX: 0, targetY: 0, score: 0
         };
-        socket.emit('initFoods', foods);
+        socket.emit('initFoods', foods); // Sadece girişte bir kez
     });
 
     socket.on('playerMove', (data) => {
@@ -65,7 +65,7 @@ io.on('connection', async (socket) => {
     });
 });
 
-// Oyun Döngüsü - 60 FPS (Hızlı Paketleme)
+// Oyun Döngüsü - 60 FPS (Akıcı ve Hızlı)
 setInterval(() => {
     const playerIds = Object.keys(players);
     for (let id in players) {
@@ -74,8 +74,8 @@ setInterval(() => {
         let dist = Math.sqrt(p.targetX * p.targetX + p.targetY * p.targetY);
 
         if (dist > 5) {
-            // Hız 1.5 Kat Artırıldı (Base speed 8-9 civarı)
-            let speed = 9 * Math.pow(p.radius / INITIAL_RADIUS, -0.15);
+            // Hız 1.5 Kat Artırıldı (Base speed 9.5)
+            let speed = 9.5 * Math.pow(p.radius / INITIAL_RADIUS, -0.15);
             let moveSpeed = dist < 50 ? (speed * dist / 50) : speed;
             p.x += Math.cos(angle) * moveSpeed;
             p.y += Math.sin(angle) * moveSpeed;
@@ -88,9 +88,9 @@ setInterval(() => {
             let f = foods[i];
             if (Math.abs(p.x - f.x) < p.radius && Math.abs(p.y - f.y) < p.radius) {
                 if (Math.hypot(p.x - f.x, p.y - f.y) < p.radius) {
-                    p.radius += 0.4; p.score += 1.5;
+                    p.radius += 0.45; p.score += 1.8;
                     const newF = spawnFood(i);
-                    io.emit('foodCollected', { i: i, newF: newF });
+                    io.emit('foodCollected', { i: i, newF: newF }); // Sadece yenen yemi bildir
                 }
             }
         }
@@ -98,10 +98,10 @@ setInterval(() => {
         playerIds.forEach(otherId => {
             if (id === otherId) return;
             let other = players[otherId];
-            if (!other && players[otherId]) return;
+            if (!other) return;
             let distance = Math.hypot(p.x - other.x, p.y - other.y);
             if (distance < p.radius && p.score > other.score + EAT_MARGIN) {
-                p.score += Math.floor(other.score * 0.5) + 40;
+                p.score += Math.floor(other.score * 0.5) + 50;
                 p.radius += (other.radius * 0.4);
                 io.to(otherId).emit('dead', { score: other.score });
                 delete players[otherId];
