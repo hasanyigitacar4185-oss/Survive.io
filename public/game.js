@@ -4,35 +4,31 @@ const mCanvas = document.getElementById('minimap-canvas');
 const mCtx = mCanvas.getContext('2d');
 const socket = io();
 
-let allPlayers = {}, allFoods = [], viruses = [], mapSize = 5000;
+let allPlayers = {}, allFoods = [], viruses = [], ejectedMasses = [], mapSize = 5000;
 let isAlive = false, controlType = "mouse", globalData = {}, boostCharge = 100;
 const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
 
 function resize() {
     canvas.width = window.innerWidth; canvas.height = window.innerHeight;
-    document.getElementById('orientation-warning').style.display = (window.innerHeight > window.innerWidth && isMobile) ? 'flex' : 'none';
 }
 window.addEventListener('resize', resize); resize();
 
 function enterFullScreen() {
     const el = document.documentElement;
     if (el.requestFullscreen) el.requestFullscreen().catch(() => {});
-    else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
 }
 
 socket.on('initGameData', (data) => { allFoods = data.foods; viruses = data.viruses; });
+socket.on('updateViruses', (v) => viruses = v);
 socket.on('foodCollected', (data) => allFoods[data.i] = data.newF);
-socket.on('updatePlayers', (p) => allPlayers = p);
+socket.on('updateState', (data) => { allPlayers = data.players; ejectedMasses = data.ejectedMasses; });
 socket.on('globalScoresUpdate', (data) => { globalData = data; renderScores('daily'); });
 
-function changeTab(type, btn) {
-    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active'); renderScores(type);
-}
-function renderScores(type) {
+function changeTab(t, b) { document.querySelectorAll('.tab-btn').forEach(x=>x.classList.remove('active')); b.classList.add('active'); renderScores(t); }
+function renderScores(t) {
     const list = document.getElementById('global-list');
-    const data = globalData[type] || [];
-    list.innerHTML = data.length ? data.map((s, i) => `<div class="lb-item"><span>${i+1}. ${s.name}</span><span>${Math.floor(s.score)}</span></div>`).join('') : "Kayıt yok.";
+    const data = globalData[t] || [];
+    list.innerHTML = data.length ? data.map((s,i) => `<div class="lb-item"><span>${i+1}. ${s.name}</span><span>${Math.floor(s.score)}</span></div>`).join('') : "Kayıt yok.";
 }
 
 document.getElementById('btn-play').onclick = () => {
@@ -47,7 +43,10 @@ document.getElementById('btn-play').onclick = () => {
             .on('move', (e, d) => socket.emit('playerMove', { x: d.vector.x*100, y: -d.vector.y*100 }))
             .on('end', () => socket.emit('playerMove', { x: 0, y: 0 }));
     }
-    if (isMobile) document.getElementById('boost-btn-mobile').style.display = 'block';
+    if (isMobile) {
+        document.getElementById('btn-boost-mob').style.display = 'flex';
+        document.getElementById('btn-eject-mob').style.display = 'flex';
+    }
     
     socket.emit('joinGame', name);
     document.getElementById('menu-overlay').style.display = 'none';
@@ -57,17 +56,17 @@ document.getElementById('btn-play').onclick = () => {
     isAlive = true;
 };
 
-// Boost Tetikleyiciler
-window.addEventListener('contextmenu', (e) => { e.preventDefault(); if(isAlive) socket.emit('triggerBoost'); });
-document.getElementById('boost-btn-mobile').ontouchstart = (e) => { e.preventDefault(); socket.emit('triggerBoost'); };
-socket.on('boostActivated', () => { boostCharge = 0; });
-
-window.addEventListener('mousemove', (e) => {
-    if (isAlive && controlType === "mouse") {
-        socket.emit('playerMove', { x: e.clientX - canvas.width / 2, y: e.clientY - canvas.height / 2 });
-    }
+// --- GİRİŞ TETİKLEYİCİLERİ ---
+// Sol Tık: Parça At | Sağ Tık: Boost
+window.addEventListener('mousedown', (e) => {
+    if(!isAlive) return;
+    if(e.button === 0) socket.emit('ejectMass');
+    if(e.button === 2) socket.emit('triggerBoost');
 });
+document.getElementById('btn-boost-mob').ontouchstart = (e) => { e.preventDefault(); socket.emit('triggerBoost'); };
+document.getElementById('btn-eject-mob').ontouchstart = (e) => { e.preventDefault(); socket.emit('ejectMass'); };
 
+socket.on('boostActivated', () => { boostCharge = 0; });
 socket.on('dead', (d) => { isAlive = false; document.getElementById('final-score').innerText = `Skor: ${Math.floor(d.score)}`; document.getElementById('death-overlay').style.display = 'flex'; });
 
 function draw() {
@@ -76,8 +75,9 @@ function draw() {
 
     if (me && isAlive) {
         if (boostCharge < 100) boostCharge += (100 / (15 * 60));
-        document.getElementById('boost-bar').style.width = boostCharge + "%";
-        document.getElementById('boost-bar').style.background = boostCharge >= 100 ? "#ffeb3b" : "white";
+        const bBar = document.getElementById('boost-bar');
+        bBar.style.width = boostCharge + "%";
+        bBar.style.background = boostCharge >= 100 ? "#ffeb3b" : "white";
 
         let zoom = Math.pow(isMobile ? 24 : 30, 0.45) / Math.pow(me.radius, 0.45);
         if (zoom < (isMobile ? 0.22 : 0.32)) zoom = isMobile ? 0.22 : 0.32;
@@ -87,7 +87,7 @@ function draw() {
         ctx.scale(zoom, zoom);
         ctx.translate(-me.x, -me.y);
 
-        // Arka Plan
+        // Grid
         ctx.strokeStyle = '#181818'; ctx.lineWidth = 2;
         ctx.beginPath();
         for(let x=0; x<=mapSize; x+=500) { ctx.moveTo(x,0); ctx.lineTo(x,mapSize); }
@@ -95,11 +95,20 @@ function draw() {
         ctx.stroke();
         ctx.strokeStyle = '#f33'; ctx.lineWidth = 15; ctx.strokeRect(0,0,mapSize,mapSize);
 
+        // Yemekler
         for(let f of allFoods) {
             if (Math.abs(me.x - f.x) < 1500 && Math.abs(me.y - f.y) < 1500) {
                 ctx.fillStyle = f.c; ctx.beginPath(); ctx.arc(f.x, f.y, f.r, 0, Math.PI*2); ctx.fill();
             }
         }
+
+        // Fırlatılan Kütleler
+        for(let m of ejectedMasses) {
+            ctx.fillStyle = m.c;
+            ctx.beginPath(); ctx.arc(m.x, m.y, m.r, 0, Math.PI*2); ctx.fill();
+            ctx.strokeStyle = 'black'; ctx.lineWidth = 2; ctx.stroke();
+        }
+
         for(let v of viruses) drawVirus(v.x, v.y, v.r);
         for(let id in allPlayers) drawJellyPlayer(allPlayers[id], id === socket.id);
         
@@ -128,7 +137,7 @@ function drawJellyPlayer(p, isMe) {
         let s = (Math.abs(p.targetX) > 5 || Math.abs(p.targetY) > 5) ? Math.cos(a - moveAngle) * (p.radius * (p.isBoosting ? 0.3 : 0.18)) : 0;
         let press = 0;
         if (p.x < p.radius + 15) press += Math.max(0, (p.radius + 15 - p.x) * -Math.cos(a));
-        if (mapSize - p.x < p.radius + 15) press += Math.max(0, (p.radius + 15 - (mapSize - p.x)) * Math.cos(a));
+        if (mapSize - p.x < p.radius + 15) press += Math.max(0, (p.radius + 10 - (mapSize - p.x)) * Math.cos(a));
         if (p.y < p.radius + 15) press += Math.max(0, (p.radius + 15 - p.y) * -Math.sin(a));
         if (mapSize - p.y < p.radius + 15) press += Math.max(0, (p.radius + 15 - (mapSize - p.y)) * Math.sin(a));
         let r = p.radius + w + s - press;
