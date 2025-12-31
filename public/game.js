@@ -6,31 +6,32 @@ const socket = io();
 
 let allPlayers = {}, allFoods = [], mapSize = 5000;
 let isAlive = false, controlType = "mouse", globalScores = [];
+const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
 
 function resize() {
     canvas.width = window.innerWidth; canvas.height = window.innerHeight;
-    const isMobile = /Mobi|Android/i.test(navigator.userAgent);
     document.getElementById('orientation-warning').style.display = (window.innerHeight > window.innerWidth && isMobile) ? 'flex' : 'none';
 }
 window.addEventListener('resize', resize); resize();
 
-// Mobil Tam Ekran Fonksiyonu
 function enterFullScreen() {
     const el = document.documentElement;
     if (el.requestFullscreen) el.requestFullscreen();
     else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
-    else if (el.msRequestFullscreen) el.msRequestFullscreen();
 }
 
 socket.on('initFoods', (f) => allFoods = f);
 socket.on('foodCollected', (data) => allFoods[data.i] = data.newF);
 socket.on('updatePlayers', (p) => allPlayers = p);
-socket.on('globalScoresUpdate', (s) => globalScores = s);
+socket.on('globalScoresUpdate', (s) => {
+    globalScores = s;
+    const list = document.getElementById('global-list');
+    if(list) list.innerHTML = s.map((item, i) => `<div class="global-item"><span>${i+1}. ${item.name}</span><span>${Math.floor(item.score)}</span></div>`).join('');
+});
 
 document.getElementById('btn-play').onclick = () => {
-    enterFullScreen(); // Oyna butonuna basınca tam ekran
+    if (isMobile) enterFullScreen(); 
     const name = document.getElementById('username').value;
-    const isMobile = /Mobi|Android/i.test(navigator.userAgent);
     const selected = document.getElementById('control-type').value;
     controlType = (selected === "auto") ? (isMobile ? "joystick" : "mouse") : selected;
 
@@ -51,19 +52,18 @@ window.addEventListener('mousemove', (e) => {
     if (isAlive && controlType === "mouse") socket.emit('playerMove', { x: e.clientX - canvas.width/2, y: e.clientY - canvas.height/2 });
 });
 
-socket.on('dead', (d) => {
-    isAlive = false;
-    document.getElementById('final-score').innerText = `Skor: ${Math.floor(d.score)}`;
-    document.getElementById('death-overlay').style.display = 'flex';
-});
+socket.on('dead', (d) => { isAlive = false; document.getElementById('final-score').innerText = `Skor: ${Math.floor(d.score)}`; document.getElementById('death-overlay').style.display = 'flex'; });
 
 function draw() {
     const me = allPlayers[socket.id];
     ctx.fillStyle = '#121212'; ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     if (me) {
-        let zoom = Math.pow(30 / me.radius, 0.45);
-        if (zoom < 0.35) zoom = 0.35;
+        // Zoom mantığı iyileştirildi: Mobilde daha geniş açı (0.35 -> 0.28)
+        let zoomBase = isMobile ? 22 : 30;
+        let zoom = Math.pow(zoomBase / me.radius, 0.45);
+        let minZoom = isMobile ? 0.25 : 0.35;
+        if (zoom < minZoom) zoom = minZoom;
 
         ctx.save();
         ctx.translate(canvas.width/2, canvas.height/2);
@@ -73,14 +73,14 @@ function draw() {
         // Grid
         ctx.strokeStyle = '#222'; ctx.lineWidth = 2;
         ctx.beginPath();
-        for(let x=0; x<=mapSize; x+=300) { ctx.moveTo(x,0); ctx.lineTo(x,mapSize); }
-        for(let y=0; y<=mapSize; y+=300) { ctx.moveTo(0,y); ctx.lineTo(mapSize,y); }
+        for(let x=0; x<=mapSize; x+=500) { ctx.moveTo(x,0); ctx.lineTo(x,mapSize); }
+        for(let y=0; y<=mapSize; y+=500) { ctx.moveTo(0,y); ctx.lineTo(mapSize,y); }
         ctx.stroke();
         ctx.strokeStyle = '#f33'; ctx.lineWidth = 15; ctx.strokeRect(0,0,mapSize,mapSize);
 
-        // Yiyecekler (Sadece Görüş Alanındakiler)
+        // Yiyecekler
         for(let f of allFoods) {
-            if (Math.abs(me.x - f.x) < 1300 && Math.abs(me.y - f.y) < 1300) {
+            if (Math.abs(me.x - f.x) < 1800 && Math.abs(me.y - f.y) < 1800) {
                 ctx.fillStyle = f.c; ctx.beginPath(); ctx.arc(f.x, f.y, f.r, 0, Math.PI*2); ctx.fill();
             }
         }
@@ -103,13 +103,11 @@ function drawJellyPlayer(p, isMe) {
         let angle = (i / points) * Math.PI * 2;
         let wobble = Math.sin(time + i * 1.2) * (p.radius * 0.04);
         let stretch = (Math.abs(p.targetX) > 5 || Math.abs(p.targetY) > 5) ? Math.cos(angle - moveAngle) * (p.radius * 0.18) : 0;
-        
         let pressure = 0;
         if (p.x < p.radius + 15) pressure += Math.max(0, (p.radius + 15 - p.x) * -Math.cos(angle));
         if (mapSize - p.x < p.radius + 15) pressure += Math.max(0, (p.radius + 15 - (mapSize - p.x)) * Math.cos(angle));
         if (p.y < p.radius + 15) pressure += Math.max(0, (p.radius + 15 - p.y) * -Math.sin(angle));
         if (mapSize - p.y < p.radius + 15) pressure += Math.max(0, (p.radius + 15 - (mapSize - p.y)) * Math.sin(angle));
-
         let r = p.radius + wobble + stretch - pressure;
         vertices.push({ x: p.x + Math.cos(angle) * r, y: p.y + Math.sin(angle) * r });
     }
@@ -130,9 +128,7 @@ function drawJellyPlayer(p, isMe) {
     ctx.fillStyle="white"; ctx.beginPath(); ctx.arc(p.radius*0.35, -p.radius*0.2, p.radius*0.2, 0, Math.PI*2); ctx.arc(p.radius*0.35, p.radius*0.2, p.radius*0.2, 0, Math.PI*2); ctx.fill();
     ctx.fillStyle="black"; ctx.beginPath(); ctx.arc(p.radius*0.35+3, -p.radius*0.2, p.radius*0.1, 0, Math.PI*2); ctx.arc(p.radius*0.35+3, p.radius*0.2, p.radius*0.1, 0, Math.PI*2); ctx.fill();
     ctx.restore();
-
-    ctx.fillStyle = "white"; ctx.font = "bold 14px Arial"; ctx.textAlign = "center";
-    ctx.fillText(p.name, p.x, p.y - p.radius - 18);
+    ctx.fillStyle = "white"; ctx.font = "bold 14px Arial"; ctx.textAlign = "center"; ctx.fillText(p.name, p.x, p.y - p.radius - 18);
 }
 
 function updateLeaderboard(me) {
