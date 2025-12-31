@@ -8,12 +8,10 @@ let allPlayers = {}, allBots = {}, allFoods = [], viruses = [], ejectedMasses = 
 let isAlive = false, controlType = "mouse", globalData = {}, boostCharge = 100;
 const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
 
-function resize() {
-    canvas.width = window.innerWidth; canvas.height = window.innerHeight;
-}
+function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
 window.addEventListener('resize', resize); resize();
 
-// UI ETKİLEŞİMLERİ (Butonlara erişim sorunu için ayrı tanımladık)
+// BUTONLAR
 document.getElementById('btn-play').onclick = () => {
     const el = document.documentElement; if (el.requestFullscreen) el.requestFullscreen().catch(()=>{});
     socket.emit('joinGame', document.getElementById('username').value);
@@ -35,17 +33,17 @@ document.getElementById('btn-play').onclick = () => {
 document.getElementById('btn-global-open').onclick = () => document.getElementById('global-modal').style.display = 'flex';
 document.getElementById('btn-global-close').onclick = () => document.getElementById('global-modal').style.display = 'none';
 document.getElementById('btn-restart').onclick = () => location.reload();
-
 document.getElementById('tab-daily').onclick = (e) => switchTab('daily', e.target);
 document.getElementById('tab-monthly').onclick = (e) => switchTab('monthly', e.target);
 document.getElementById('tab-alltime').onclick = (e) => switchTab('allTime', e.target);
 
-function switchTab(t, btn) {
-    document.querySelectorAll('.tab-btn').forEach(x=>x.classList.remove('active'));
-    btn.classList.add('active'); renderScores(t);
+function switchTab(t, b) { document.querySelectorAll('.tab-btn').forEach(x=>x.classList.remove('active')); b.classList.add('active'); renderScores(t); }
+function renderScores(t) {
+    const list = document.getElementById('global-list');
+    const data = globalData[t] || [];
+    list.innerHTML = data.length ? data.map((s,i) => `<div class="lb-item"><span>${i+1}. ${s.name}</span><span>${Math.floor(s.score)}</span></div>`).join('') : "Kayıt yok.";
 }
 
-// SOCKET OLAYLARI
 socket.on('initGameData', (d) => { allFoods = d.foods; viruses = d.viruses; });
 socket.on('updateViruses', (v) => viruses = v);
 socket.on('foodCollected', (d) => allFoods[d.i] = d.newF);
@@ -54,29 +52,11 @@ socket.on('globalScoresUpdate', (d) => { globalData = d; renderScores('daily'); 
 socket.on('boostActivated', () => boostCharge = 0);
 socket.on('dead', (d) => { isAlive = false; document.getElementById('final-score').innerText = `Skor: ${Math.floor(d.score)}`; document.getElementById('death-overlay').style.display = 'flex'; });
 
-function renderScores(t) {
-    const list = document.getElementById('global-list');
-    const data = globalData[t] || [];
-    list.innerHTML = data.length ? data.map((s,i) => `<div class="lb-item"><span>${i+1}. ${s.name}</span><span>${Math.floor(s.score)}</span></div>`).join('') : "Kayıt yok.";
-}
-
-// HAREKET VE AKSİYONLAR
-canvas.addEventListener('mousemove', (e) => {
-    if (isAlive && controlType === "mouse") {
-        socket.emit('playerMove', { x: e.clientX - window.innerWidth/2, y: e.clientY - window.innerHeight/2 });
-    }
-});
-
-canvas.addEventListener('mousedown', (e) => {
-    if(!isAlive) return;
-    if(e.button === 0) socket.emit('ejectMass');
-    if(e.button === 2) socket.emit('triggerBoost');
-});
-
+canvas.addEventListener('mousemove', (e) => { if (isAlive && controlType === "mouse") socket.emit('playerMove', { x: e.clientX - window.innerWidth/2, y: e.clientY - window.innerHeight/2 }); });
+canvas.addEventListener('mousedown', (e) => { if(isAlive) { if(e.button === 0) socket.emit('ejectMass'); if(e.button === 2) socket.emit('triggerBoost'); } });
 document.getElementById('btn-boost-mob').ontouchstart = (e) => { e.preventDefault(); socket.emit('triggerBoost'); };
 document.getElementById('btn-eject-mob').ontouchstart = (e) => { e.preventDefault(); socket.emit('ejectMass'); };
 
-// ÇİZİM DÖNGÜSÜ
 function draw() {
     const me = allPlayers[socket.id];
     ctx.fillStyle = '#0a0a0a'; ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -94,23 +74,16 @@ function draw() {
         ctx.scale(zoom, zoom);
         ctx.translate(-me.x, -me.y);
 
-        // Map Sınırı ve Grid
         ctx.strokeStyle = '#181818'; ctx.lineWidth = 4; ctx.beginPath();
         for(let x=0; x<=mapSize; x+=1000) { ctx.moveTo(x,0); ctx.lineTo(x,mapSize); }
         for(let y=0; y<=mapSize; y+=1000) { ctx.moveTo(0,y); ctx.lineTo(mapSize,y); }
         ctx.stroke();
         ctx.strokeStyle = '#f33'; ctx.lineWidth = 30; ctx.strokeRect(0,0,mapSize,mapSize);
 
-        // Yiyecekler (Culling - Performans)
         for(let f of allFoods) if (Math.abs(me.x-f.x)<2500 && Math.abs(me.y-f.y)<2500) { ctx.fillStyle=f.c; ctx.beginPath(); ctx.arc(f.x,f.y,f.r,0,Math.PI*2); ctx.fill(); }
-        
-        // Ejected Mass
         for(let m of ejectedMasses) { ctx.fillStyle=m.c; ctx.beginPath(); ctx.arc(m.x,m.y,m.r,0,Math.PI*2); ctx.fill(); ctx.strokeStyle='black'; ctx.lineWidth=2; ctx.stroke(); }
-        
-        // Virüsler
         for(let v of viruses) drawVirus(v.x, v.y, v.r);
         
-        // Oyuncular ve Botlar
         const everyone = {...allPlayers, ...allBots};
         for(let id in everyone) drawJellyPlayer(everyone[id], id === socket.id);
         
@@ -131,8 +104,7 @@ function drawJellyPlayer(p, isMe) {
     const points = 32, time = Date.now() * 0.006, vertices = [];
     const moveAngle = Math.atan2(p.targetY, p.targetX);
     for (let i = 0; i < points; i++) {
-        let a = (i / points) * Math.PI * 2;
-        let w = Math.sin(time + i * 1.2) * (p.radius * 0.04);
+        let a = (i / points) * Math.PI * 2, w = Math.sin(time + i * 1.2) * (p.radius * 0.04);
         let s = (Math.abs(p.targetX) > 5 || Math.abs(p.targetY) > 5) ? Math.cos(a - moveAngle) * (p.radius * (p.isBoosting ? 0.3 : 0.18)) : 0;
         let press = 0;
         if (p.x < p.radius + 15) press += Math.max(0, (p.radius + 15 - p.x) * -Math.cos(a));
@@ -143,10 +115,7 @@ function drawJellyPlayer(p, isMe) {
         vertices.push({ x: p.x + Math.cos(a) * r, y: p.y + Math.sin(a) * r });
     }
     ctx.beginPath(); ctx.moveTo((vertices[0].x + vertices[points-1].x) / 2, (vertices[0].y + vertices[points-1].y) / 2);
-    for (let i = 0; i < points; i++) {
-        const n = vertices[(i + 1) % points];
-        ctx.quadraticCurveTo(vertices[i].x, vertices[i].y, (vertices[i].x + n.x) / 2, (vertices[i].y + n.y) / 2);
-    }
+    for (let i = 0; i < points; i++) { const n = vertices[(i + 1) % points]; ctx.quadraticCurveTo(vertices[i].x, vertices[i].y, (vertices[i].x + n.x) / 2, (vertices[i].y + n.y) / 2); }
     ctx.closePath(); ctx.fillStyle = p.color; ctx.fill(); ctx.strokeStyle = p.isBoosting ? 'yellow' : 'white'; ctx.lineWidth = 5; ctx.stroke();
     ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(moveAngle);
     ctx.fillStyle="white"; ctx.beginPath(); ctx.arc(p.radius*0.35, -p.radius*0.2, p.radius*0.2, 0, Math.PI*2); ctx.arc(p.radius*0.35, p.radius*0.2, p.radius*0.2, 0, Math.PI*2); ctx.fill();
@@ -165,8 +134,7 @@ function drawMinimap(me, everyone) {
     mCtx.clearRect(0,0,125,125); const s = 125 / mapSize;
     for(let id in everyone) { 
         const p = everyone[id]; mCtx.fillStyle = id === socket.id ? "#fff" : "#f44"; 
-        let dotR = Math.max(2, p.radius * 0.025); 
-        mCtx.beginPath(); mCtx.arc(p.x*s, p.y*s, dotR, 0, Math.PI*2); mCtx.fill(); 
+        mCtx.beginPath(); mCtx.arc(p.x*s, p.y*s, Math.max(2, p.radius*0.025), 0, Math.PI*2); mCtx.fill(); 
     }
 }
 draw();
