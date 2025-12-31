@@ -14,11 +14,12 @@ function resize() {
 }
 window.addEventListener('resize', resize); resize();
 
-// Tam Ekran Fonksiyonu
-function toggleFullScreen() {
-    if (!document.fullscreenElement) {
-        document.documentElement.requestFullscreen().catch(e => console.log(e));
-    }
+// Mobil Tam Ekran Fonksiyonu
+function enterFullScreen() {
+    const el = document.documentElement;
+    if (el.requestFullscreen) el.requestFullscreen();
+    else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+    else if (el.msRequestFullscreen) el.msRequestFullscreen();
 }
 
 socket.on('initFoods', (f) => allFoods = f);
@@ -27,7 +28,7 @@ socket.on('updatePlayers', (p) => allPlayers = p);
 socket.on('globalScoresUpdate', (s) => globalScores = s);
 
 document.getElementById('btn-play').onclick = () => {
-    toggleFullScreen(); // Oyna deyince tam ekran yap
+    enterFullScreen(); // Oyna butonuna basınca tam ekran
     const name = document.getElementById('username').value;
     const isMobile = /Mobi|Android/i.test(navigator.userAgent);
     const selected = document.getElementById('control-type').value;
@@ -72,14 +73,14 @@ function draw() {
         // Grid
         ctx.strokeStyle = '#222'; ctx.lineWidth = 2;
         ctx.beginPath();
-        for(let x=0; x<=mapSize; x+=250) { ctx.moveTo(x,0); ctx.lineTo(x,mapSize); }
-        for(let y=0; y<=mapSize; y+=250) { ctx.moveTo(0,y); ctx.lineTo(mapSize,y); }
+        for(let x=0; x<=mapSize; x+=300) { ctx.moveTo(x,0); ctx.lineTo(x,mapSize); }
+        for(let y=0; y<=mapSize; y+=300) { ctx.moveTo(0,y); ctx.lineTo(mapSize,y); }
         ctx.stroke();
         ctx.strokeStyle = '#f33'; ctx.lineWidth = 15; ctx.strokeRect(0,0,mapSize,mapSize);
 
-        // Yiyecekler
+        // Yiyecekler (Sadece Görüş Alanındakiler)
         for(let f of allFoods) {
-            if (Math.abs(me.x - f.x) < 1200 && Math.abs(me.y - f.y) < 1200) {
+            if (Math.abs(me.x - f.x) < 1300 && Math.abs(me.y - f.y) < 1300) {
                 ctx.fillStyle = f.c; ctx.beginPath(); ctx.arc(f.x, f.y, f.r, 0, Math.PI*2); ctx.fill();
             }
         }
@@ -93,15 +94,15 @@ function draw() {
 }
 
 function drawJellyPlayer(p, isMe) {
-    const points = 32; // Jöle kalitesi artırıldı
-    const time = Date.now() * 0.005;
+    const points = 32; 
+    const time = Date.now() * 0.006;
     const vertices = [];
     const moveAngle = Math.atan2(p.targetY, p.targetX);
 
     for (let i = 0; i < points; i++) {
         let angle = (i / points) * Math.PI * 2;
-        let wobble = Math.sin(time + i * 0.8) * (p.radius * 0.04);
-        let stretch = (isMe && (Math.abs(p.targetX) > 5 || Math.abs(p.targetY) > 5)) ? Math.cos(angle - moveAngle) * (p.radius * 0.18) : 0;
+        let wobble = Math.sin(time + i * 1.2) * (p.radius * 0.04);
+        let stretch = (Math.abs(p.targetX) > 5 || Math.abs(p.targetY) > 5) ? Math.cos(angle - moveAngle) * (p.radius * 0.18) : 0;
         
         let pressure = 0;
         if (p.x < p.radius + 15) pressure += Math.max(0, (p.radius + 15 - p.x) * -Math.cos(angle));
@@ -125,11 +126,13 @@ function drawJellyPlayer(p, isMe) {
 
     ctx.save();
     ctx.translate(p.x, p.y);
-    ctx.rotate(isMe ? moveAngle : 0);
+    ctx.rotate(moveAngle);
     ctx.fillStyle="white"; ctx.beginPath(); ctx.arc(p.radius*0.35, -p.radius*0.2, p.radius*0.2, 0, Math.PI*2); ctx.arc(p.radius*0.35, p.radius*0.2, p.radius*0.2, 0, Math.PI*2); ctx.fill();
     ctx.fillStyle="black"; ctx.beginPath(); ctx.arc(p.radius*0.35+3, -p.radius*0.2, p.radius*0.1, 0, Math.PI*2); ctx.arc(p.radius*0.35+3, p.radius*0.2, p.radius*0.1, 0, Math.PI*2); ctx.fill();
     ctx.restore();
-    ctx.fillStyle = "white"; ctx.font = "bold 14px Arial"; ctx.textAlign = "center"; ctx.fillText(p.name, p.x, p.y - p.radius - 15);
+
+    ctx.fillStyle = "white"; ctx.font = "bold 14px Arial"; ctx.textAlign = "center";
+    ctx.fillText(p.name, p.x, p.y - p.radius - 18);
 }
 
 function updateLeaderboard(me) {
@@ -140,7 +143,7 @@ function updateLeaderboard(me) {
 }
 
 function drawMinimap(me) {
-    mCtx.clearRect(0,0,130,130); const s = 130 / mapSize;
+    mCtx.clearRect(0,0,120,120); const s = 120 / mapSize;
     for(let id in allPlayers) { 
         mCtx.fillStyle = id === socket.id ? "#fff" : "#f44"; 
         mCtx.beginPath(); mCtx.arc(allPlayers[id].x*s, allPlayers[id].y*s, id === socket.id ? 3 : 2, 0, Math.PI*2); mCtx.fill(); 
