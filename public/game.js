@@ -4,14 +4,13 @@ const mCanvas = document.getElementById('minimap-canvas');
 const mCtx = mCanvas.getContext('2d');
 const socket = io();
 
-let allPlayers = {}, allBots = {}, allFoods = [], viruses = [], ejectedMasses = [], mapSize = 15000;
+let allEntities = {}, allFoods = [], viruses = [], ejectedMasses = [], mapSize = 15000;
 let isAlive = false, controlType = "mouse", globalData = {}, boostCharge = 100;
 const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
 
 function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
 window.addEventListener('resize', resize); resize();
 
-// BUTONLAR
 document.getElementById('btn-play').onclick = () => {
     const el = document.documentElement; if (el.requestFullscreen) el.requestFullscreen().catch(()=>{});
     socket.emit('joinGame', document.getElementById('username').value);
@@ -33,21 +32,21 @@ document.getElementById('btn-play').onclick = () => {
 document.getElementById('btn-global-open').onclick = () => document.getElementById('global-modal').style.display = 'flex';
 document.getElementById('btn-global-close').onclick = () => document.getElementById('global-modal').style.display = 'none';
 document.getElementById('btn-restart').onclick = () => location.reload();
-document.getElementById('tab-daily').onclick = (e) => switchTab('daily', e.target);
-document.getElementById('tab-monthly').onclick = (e) => switchTab('monthly', e.target);
-document.getElementById('tab-alltime').onclick = (e) => switchTab('allTime', e.target);
+document.getElementById('tab-daily').onclick = () => switchTab('daily');
+document.getElementById('tab-monthly').onclick = () => switchTab('monthly');
+document.getElementById('tab-alltime').onclick = () => switchTab('allTime');
 
-function switchTab(t, b) { document.querySelectorAll('.tab-btn').forEach(x=>x.classList.remove('active')); b.classList.add('active'); renderScores(t); }
+function switchTab(t) { renderScores(t); }
 function renderScores(t) {
     const list = document.getElementById('global-list');
     const data = globalData[t] || [];
-    list.innerHTML = data.length ? data.map((s,i) => `<div class="lb-item"><span>${i+1}. ${s.name}</span><span>${Math.floor(s.score)}</span></div>`).join('') : "Kayıt yok.";
+    list.innerHTML = data.length ? data.map((s,i) => `<div class="lb-item"><span>${i+1}. ${s.name}</span><span>${Math.floor(s.score)}</span></div>`).join('') : "Yükleniyor...";
 }
 
 socket.on('initGameData', (d) => { allFoods = d.foods; viruses = d.viruses; });
 socket.on('updateViruses', (v) => viruses = v);
 socket.on('foodCollected', (d) => allFoods[d.i] = d.newF);
-socket.on('updateState', (d) => { allPlayers = d.players; allBots = d.bots; ejectedMasses = d.ejectedMasses; });
+socket.on('updateState', (d) => { allEntities = d.players; ejectedMasses = d.ejectedMasses; });
 socket.on('globalScoresUpdate', (d) => { globalData = d; renderScores('daily'); });
 socket.on('boostActivated', () => boostCharge = 0);
 socket.on('dead', (d) => { isAlive = false; document.getElementById('final-score').innerText = `Skor: ${Math.floor(d.score)}`; document.getElementById('death-overlay').style.display = 'flex'; });
@@ -58,7 +57,7 @@ document.getElementById('btn-boost-mob').ontouchstart = (e) => { e.preventDefaul
 document.getElementById('btn-eject-mob').ontouchstart = (e) => { e.preventDefault(); socket.emit('ejectMass'); };
 
 function draw() {
-    const me = allPlayers[socket.id];
+    const me = allEntities[socket.id];
     ctx.fillStyle = '#0a0a0a'; ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     if (me && isAlive) {
@@ -74,22 +73,21 @@ function draw() {
         ctx.scale(zoom, zoom);
         ctx.translate(-me.x, -me.y);
 
+        // Grid
         ctx.strokeStyle = '#181818'; ctx.lineWidth = 4; ctx.beginPath();
         for(let x=0; x<=mapSize; x+=1000) { ctx.moveTo(x,0); ctx.lineTo(x,mapSize); }
         for(let y=0; y<=mapSize; y+=1000) { ctx.moveTo(0,y); ctx.lineTo(mapSize,y); }
         ctx.stroke();
         ctx.strokeStyle = '#f33'; ctx.lineWidth = 30; ctx.strokeRect(0,0,mapSize,mapSize);
 
-        for(let f of allFoods) if (Math.abs(me.x-f.x)<2500 && Math.abs(me.y-f.y)<2500) { ctx.fillStyle=f.c; ctx.beginPath(); ctx.arc(f.x,f.y,f.r,0,Math.PI*2); ctx.fill(); }
+        for(let f of allFoods) if (Math.abs(me.x-f.x)<2000 && Math.abs(me.y-f.y)<1500) { ctx.fillStyle=f.c; ctx.beginPath(); ctx.arc(f.x,f.y,f.r,0,Math.PI*2); ctx.fill(); }
         for(let m of ejectedMasses) { ctx.fillStyle=m.c; ctx.beginPath(); ctx.arc(m.x,m.y,m.r,0,Math.PI*2); ctx.fill(); ctx.strokeStyle='black'; ctx.lineWidth=2; ctx.stroke(); }
         for(let v of viruses) drawVirus(v.x, v.y, v.r);
-        
-        const everyone = {...allPlayers, ...allBots};
-        for(let id in everyone) drawJellyPlayer(everyone[id], id === socket.id);
+        for(let id in allEntities) drawJellyPlayer(allEntities[id], id === socket.id);
         
         ctx.restore();
-        updateUI(me, everyone);
-        drawMinimap(me, everyone);
+        updateUI(me);
+        drawMinimap(me);
     }
     requestAnimationFrame(draw);
 }
@@ -101,16 +99,16 @@ function drawVirus(x, y, r) {
 }
 
 function drawJellyPlayer(p, isMe) {
-    const points = 32, time = Date.now() * 0.006, vertices = [];
+    const points = 24, time = Date.now() * 0.006, vertices = [];
     const moveAngle = Math.atan2(p.targetY, p.targetX);
     for (let i = 0; i < points; i++) {
-        let a = (i / points) * Math.PI * 2, w = Math.sin(time + i * 1.2) * (p.radius * 0.04);
-        let s = (Math.abs(p.targetX) > 5 || Math.abs(p.targetY) > 5) ? Math.cos(a - moveAngle) * (p.radius * (p.isBoosting ? 0.3 : 0.18)) : 0;
+        let a = (i / points) * Math.PI * 2, w = Math.sin(time + i * 1.5) * (p.radius * 0.03);
+        let s = (Math.abs(p.targetX) > 5 || Math.abs(p.targetY) > 5) ? Math.cos(a - moveAngle) * (p.radius * (p.isBoosting ? 0.3 : 0.15)) : 0;
         let press = 0;
-        if (p.x < p.radius + 15) press += Math.max(0, (p.radius + 15 - p.x) * -Math.cos(a));
-        if (mapSize - p.x < p.radius + 15) press += Math.max(0, (p.radius + 10 - (mapSize - p.x)) * Math.cos(a));
-        if (p.y < p.radius + 15) press += Math.max(0, (p.radius + 15 - p.y) * -Math.sin(a));
-        if (mapSize - p.y < p.radius + 15) press += Math.max(0, (p.radius + 15 - (mapSize - p.y)) * Math.sin(a));
+        if (p.x < p.radius + 20) press += Math.max(0, (p.radius + 20 - p.x) * -Math.cos(a));
+        if (mapSize - p.x < p.radius + 20) press += Math.max(0, (p.radius + 20 - (mapSize - p.x)) * Math.cos(a));
+        if (p.y < p.radius + 20) press += Math.max(0, (p.radius + 20 - p.y) * -Math.sin(a));
+        if (mapSize - p.y < p.radius + 20) press += Math.max(0, (p.radius + 20 - (mapSize - p.y)) * Math.sin(a));
         let r = p.radius + w + s - press;
         vertices.push({ x: p.x + Math.cos(a) * r, y: p.y + Math.sin(a) * r });
     }
@@ -124,17 +122,17 @@ function drawJellyPlayer(p, isMe) {
     ctx.fillStyle = "white"; ctx.font = "bold 14px Arial"; ctx.textAlign = "center"; ctx.fillText(p.name, p.x, p.y - p.radius - 18);
 }
 
-function updateUI(me, everyone) {
-    let sorted = Object.values(everyone).sort((a,b) => b.score - a.score);
+function updateUI(me) {
+    let sorted = Object.values(allEntities).sort((a,b) => b.score - a.score);
     document.getElementById('lb-list').innerHTML = sorted.slice(0, 5).map((p, i) => `<div class="lb-item"><span>${i+1}. ${p.name}</span><span>${Math.floor(p.score)}</span></div>`).join('');
     document.getElementById('lb-player').innerHTML = `<div class="lb-item lb-own"><span>${sorted.findIndex(p => p.id === socket.id)+1}. ${me.name}</span><span>${Math.floor(me.score)}</span></div>`;
 }
 
-function drawMinimap(me, everyone) {
+function drawMinimap(me) {
     mCtx.clearRect(0,0,125,125); const s = 125 / mapSize;
-    for(let id in everyone) { 
-        const p = everyone[id]; mCtx.fillStyle = id === socket.id ? "#fff" : "#f44"; 
-        mCtx.beginPath(); mCtx.arc(p.x*s, p.y*s, Math.max(2, p.radius*0.025), 0, Math.PI*2); mCtx.fill(); 
+    for(let id in allEntities) { 
+        const p = allEntities[id]; mCtx.fillStyle = id === socket.id ? "#fff" : "#f44"; 
+        mCtx.beginPath(); mCtx.arc(p.x*s, p.y*s, Math.max(2, p.radius*0.02), 0, Math.PI*2); mCtx.fill(); 
     }
 }
 draw();
