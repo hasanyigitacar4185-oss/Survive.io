@@ -10,50 +10,44 @@ const io = new Server(server);
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-// --- VERİTABANI BAĞLANTISI ---
 const MONGODB_URI = "mongodb+srv://hasanyigitacar4185_db_user:Hh254185@cluster0.wpqguet.mongodb.net/?appName=Cluster0";
 
 mongoose.connect(MONGODB_URI)
     .then(() => console.log("✅ MongoDB Bağlantısı Başarılı!"))
     .catch(err => console.error("❌ Bağlantı Hatası: ", err));
 
-const ScoreSchema = new mongoose.Schema({
-    name: String,
-    score: Number,
-    date: { type: Date, default: Date.now }
-});
-const HighScore = mongoose.model('HighScore', ScoreSchema);
+const HighScore = mongoose.model('HighScore', new mongoose.Schema({
+    name: String, score: Number, date: { type: Date, default: Date.now }
+}));
 
 const MAP_SIZE = 5000;
-const FOOD_COUNT = 850;
+const FOOD_COUNT = 600; // Sayıyı biraz azalttık (Performans için)
 const INITIAL_RADIUS = 30;
 const EAT_MARGIN = 5;
-const BOOST_SPEED_MULTIPLIER = 1.8;
-const BOOST_SCORE_COST = 0.15;
+const BOOST_SPEED_MULTIPLIER = 1.7;
+const BOOST_SCORE_COST = 0.2;
 
 let players = {};
 let foods = [];
 
-// Global Skorları Yayınla
 async function syncGlobalScores() {
     try {
         const scores = await HighScore.find().sort({ score: -1 }).limit(10);
         io.emit('globalScoresUpdate', scores);
-    } catch (e) { console.log("Senkronize hatası"); }
+    } catch (e) {}
 }
 
-// Skoru Veritabanına Yaz
 async function updateGlobalScores(name, score) {
-    if (score < 20) return; // 20 puandan azsa kaydetme
+    if (score < 30) return;
     try {
         await new HighScore({ name, score: Math.floor(score) }).save();
         syncGlobalScores();
-    } catch (e) { console.log("Skor kaydedilemedi"); }
+    } catch (e) {}
 }
 
 function spawnFood() {
     return {
-        id: Math.random().toString(36).substr(2, 9),
+        id: Math.random().toString(36).substr(2, 5),
         x: Math.random() * MAP_SIZE,
         y: Math.random() * MAP_SIZE,
         color: `hsl(${Math.random() * 360}, 70%, 50%)`,
@@ -71,14 +65,10 @@ io.on('connection', async (socket) => {
 
     socket.on('joinGame', (username) => {
         players[socket.id] = {
-            id: socket.id,
-            name: username || "Adsız",
-            x: Math.random() * MAP_SIZE,
-            y: Math.random() * MAP_SIZE,
+            id: socket.id, name: username || "Adsız",
+            x: Math.random() * MAP_SIZE, y: Math.random() * MAP_SIZE,
             color: `hsl(${Math.random() * 360}, 80%, 60%)`,
-            radius: INITIAL_RADIUS,
-            targetX: 0, targetY: 0, score: 0,
-            isBoosting: false
+            radius: INITIAL_RADIUS, targetX: 0, targetY: 0, score: 0, isBoosting: false
         };
     });
 
@@ -91,16 +81,13 @@ io.on('connection', async (socket) => {
 
     socket.on('startBoost', () => { if(players[socket.id]) players[socket.id].isBoosting = true; });
     socket.on('stopBoost', () => { if(players[socket.id]) players[socket.id].isBoosting = false; });
-
     socket.on('disconnect', () => { 
-        if (players[socket.id]) {
-            // Sekmeyi kapattığında da skoru kaydetmeyi dene
-            updateGlobalScores(players[socket.id].name, players[socket.id].score);
-            delete players[socket.id]; 
-        }
+        if(players[socket.id]) { updateGlobalScores(players[socket.id].name, players[socket.id].score); }
+        delete players[socket.id]; 
     });
 });
 
+// Sunucu döngüsünü 30 FPS'e çektik (Gecikmeyi azaltır)
 setInterval(() => {
     const playerIds = Object.keys(players);
     for (let id in players) {
@@ -109,25 +96,25 @@ setInterval(() => {
         let dist = Math.sqrt(p.targetX * p.targetX + p.targetY * p.targetY);
 
         if (dist > 5) {
-            let speed = 5 * Math.pow(p.radius / INITIAL_RADIUS, -0.15);
-            if (p.isBoosting && p.score > 5) {
+            let speed = 6 * Math.pow(p.radius / INITIAL_RADIUS, -0.15);
+            if (p.isBoosting && p.score > 10) {
                 speed *= BOOST_SPEED_MULTIPLIER;
                 p.score -= BOOST_SCORE_COST;
-                p.radius -= BOOST_SCORE_COST * 0.1;
+                p.radius -= BOOST_SCORE_COST * 0.05;
             }
-            let moveSpeed = dist < 50 ? (speed * dist / 50) : speed;
-            p.x += Math.cos(angle) * moveSpeed;
-            p.y += Math.sin(angle) * moveSpeed;
+            p.x += Math.cos(angle) * speed;
+            p.y += Math.sin(angle) * speed;
         }
         
         p.x = Math.max(0, Math.min(MAP_SIZE, p.x));
         p.y = Math.max(0, Math.min(MAP_SIZE, p.y));
-        if (p.radius < INITIAL_RADIUS) p.radius = INITIAL_RADIUS;
 
         foods.forEach((food, index) => {
-            if (Math.hypot(p.x - food.x, p.y - food.y) < p.radius) {
-                p.radius += 0.35; p.score += 1.2;
-                foods[index] = spawnFood();
+            if (Math.abs(p.x - food.x) < p.radius && Math.abs(p.y - food.y) < p.radius) {
+                if (Math.hypot(p.x - food.x, p.y - food.y) < p.radius) {
+                    p.radius += 0.35; p.score += 1.2;
+                    foods[index] = spawnFood();
+                }
             }
         });
 
@@ -135,20 +122,18 @@ setInterval(() => {
             if (id === otherId) return;
             let other = players[otherId];
             if (!other) return;
-            if (Math.hypot(p.x - other.x, p.y - other.y) < p.radius && p.score > other.score + EAT_MARGIN) {
-                p.score += Math.floor(other.score * 0.6) + 30;
-                p.radius += (other.radius * 0.4);
-                
-                // Ölen oyuncunun skorunu kaydet
+            let distance = Math.hypot(p.x - other.x, p.y - other.y);
+            if (distance < p.radius && p.score > other.score + EAT_MARGIN) {
+                p.score += Math.floor(other.score * 0.5) + 30;
+                p.radius += (other.radius * 0.3);
                 updateGlobalScores(other.name, other.score);
-                
                 io.to(otherId).emit('dead', { score: other.score });
                 delete players[otherId];
             }
         });
     }
     io.emit('update', { players, foods, MAP_SIZE });
-}, 1000 / 60);
+}, 1000 / 30); // 30 FPS idealdir
 
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`Survive.io aktif: http://localhost:${PORT}`));
+const PORT = process.env.PORT || 10000;
+server.listen(PORT, () => console.log(`Survive.io aktif.`));
