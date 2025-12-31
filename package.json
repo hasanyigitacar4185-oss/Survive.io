@@ -1,5 +1,5 @@
 {
-  "name": "Survival-io",
+  "name": "survive-io",
   "version": "1.0.0",
   "description": "Online io oyunu",
   "main": "server.js",
@@ -8,6 +8,7 @@
   },
   "dependencies": {
     "express": "^4.18.2",
-    "socket.io": "^4.7.2"
+    "socket.io": "^4.7.2",
+    "mongoose": "^8.0.0"
   }
 }
