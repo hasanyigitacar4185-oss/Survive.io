@@ -16,6 +16,7 @@ window.addEventListener('resize', resize); resize();
 function enterFullScreen() {
     const el = document.documentElement;
     if (el.requestFullscreen) el.requestFullscreen().catch(() => {});
+    else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
 }
 
 socket.on('initGameData', (data) => { allFoods = data.foods; viruses = data.viruses; });
@@ -56,13 +57,21 @@ document.getElementById('btn-play').onclick = () => {
     isAlive = true;
 };
 
-// --- GİRİŞ TETİKLEYİCİLERİ ---
-// Sol Tık: Parça At | Sağ Tık: Boost
+// PC HAREKET FİX (Tam ekran ve Resize uyumlu)
+window.addEventListener('mousemove', (e) => {
+    if (isAlive && controlType === "mouse") {
+        const centerX = window.innerWidth / 2;
+        const centerY = window.innerHeight / 2;
+        socket.emit('playerMove', { x: e.clientX - centerX, y: e.clientY - centerY });
+    }
+});
+
 window.addEventListener('mousedown', (e) => {
     if(!isAlive) return;
     if(e.button === 0) socket.emit('ejectMass');
     if(e.button === 2) socket.emit('triggerBoost');
 });
+
 document.getElementById('btn-boost-mob').ontouchstart = (e) => { e.preventDefault(); socket.emit('triggerBoost'); };
 document.getElementById('btn-eject-mob').ontouchstart = (e) => { e.preventDefault(); socket.emit('ejectMass'); };
 
@@ -75,9 +84,8 @@ function draw() {
 
     if (me && isAlive) {
         if (boostCharge < 100) boostCharge += (100 / (15 * 60));
-        const bBar = document.getElementById('boost-bar');
-        bBar.style.width = boostCharge + "%";
-        bBar.style.background = boostCharge >= 100 ? "#ffeb3b" : "white";
+        document.getElementById('boost-bar').style.width = boostCharge + "%";
+        document.getElementById('boost-bar').style.background = boostCharge >= 100 ? "#ffeb3b" : "white";
 
         let zoom = Math.pow(isMobile ? 24 : 30, 0.45) / Math.pow(me.radius, 0.45);
         if (zoom < (isMobile ? 0.22 : 0.32)) zoom = isMobile ? 0.22 : 0.32;
@@ -87,7 +95,6 @@ function draw() {
         ctx.scale(zoom, zoom);
         ctx.translate(-me.x, -me.y);
 
-        // Grid
         ctx.strokeStyle = '#181818'; ctx.lineWidth = 2;
         ctx.beginPath();
         for(let x=0; x<=mapSize; x+=500) { ctx.moveTo(x,0); ctx.lineTo(x,mapSize); }
@@ -95,20 +102,15 @@ function draw() {
         ctx.stroke();
         ctx.strokeStyle = '#f33'; ctx.lineWidth = 15; ctx.strokeRect(0,0,mapSize,mapSize);
 
-        // Yemekler
         for(let f of allFoods) {
             if (Math.abs(me.x - f.x) < 1500 && Math.abs(me.y - f.y) < 1500) {
                 ctx.fillStyle = f.c; ctx.beginPath(); ctx.arc(f.x, f.y, f.r, 0, Math.PI*2); ctx.fill();
             }
         }
-
-        // Fırlatılan Kütleler
         for(let m of ejectedMasses) {
-            ctx.fillStyle = m.c;
-            ctx.beginPath(); ctx.arc(m.x, m.y, m.r, 0, Math.PI*2); ctx.fill();
+            ctx.fillStyle = m.c; ctx.beginPath(); ctx.arc(m.x, m.y, m.r, 0, Math.PI*2); ctx.fill();
             ctx.strokeStyle = 'black'; ctx.lineWidth = 2; ctx.stroke();
         }
-
         for(let v of viruses) drawVirus(v.x, v.y, v.r);
         for(let id in allPlayers) drawJellyPlayer(allPlayers[id], id === socket.id);
         
