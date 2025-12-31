@@ -11,16 +11,16 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 let players = {};
 let foods = [];
-const FOOD_COUNT = 50; 
+const MAP_SIZE = 3000; // Harita boyutu
+const FOOD_COUNT = 300; // Daha büyük harita için daha çok yiyecek
 
-// Yiyecek oluşturma
 function spawnFood() {
     return {
         id: Math.random().toString(36).substr(2, 9),
-        x: Math.random() * 800, // Şimdilik küçük alan
-        y: Math.random() * 600,
+        x: Math.random() * MAP_SIZE,
+        y: Math.random() * MAP_SIZE,
         color: `hsl(${Math.random() * 360}, 70%, 50%)`,
-        radius: 5
+        radius: 6
     };
 }
 
@@ -29,28 +29,20 @@ for (let i = 0; i < FOOD_COUNT; i++) {
 }
 
 io.on('connection', (socket) => {
-    console.log('Yeni oyuncu:', socket.id);
-
     players[socket.id] = {
-        x: 400,
-        y: 300,
-        color: '#' + Math.floor(Math.random() * 16777215).toString(16),
-        radius: 20
+        x: Math.random() * MAP_SIZE,
+        y: Math.random() * MAP_SIZE,
+        color: `hsl(${Math.random() * 360}, 80%, 60%)`,
+        radius: 25,
+        targetX: 0,
+        targetY: 0
     };
 
+    // Client'tan farenin nerede olduğunu alıyoruz
     socket.on('playerMove', (data) => {
         if (players[socket.id]) {
-            players[socket.id].x = data.x;
-            players[socket.id].y = data.y;
-
-            // Yiyecek kontrolü
-            foods.forEach((food, index) => {
-                const dist = Math.hypot(players[socket.id].x - food.x, players[socket.id].y - food.y);
-                if (dist < players[socket.id].radius) {
-                    players[socket.id].radius += 0.5;
-                    foods[index] = spawnFood();
-                }
-            });
+            players[socket.id].targetX = data.x;
+            players[socket.id].targetY = data.y;
         }
     });
 
@@ -59,11 +51,39 @@ io.on('connection', (socket) => {
     });
 });
 
+// Hareket ve Çarpışma Hesaplamaları (Sunucuda döner)
 setInterval(() => {
-    io.emit('update', { players, foods });
-}, 1000 / 30);
+    for (let id in players) {
+        let p = players[id];
+        
+        // Fareye doğru yumuşak hareket hesapla
+        // (Fare oyuncunun merkezine göre ne kadar uzaktaysa o yöne git)
+        let dx = p.targetX; 
+        let dy = p.targetY;
+        let dist = Math.sqrt(dx * dx + dy * dy);
+
+        if (dist > 5) { // Fare merkeze çok yakın değilse hareket et
+            // Hız: Oyuncu büyüdükçe biraz yavaşlar (Opsiyonel)
+            let speed = 4; 
+            p.x += (dx / dist) * speed;
+            p.y += (dy / dist) * speed;
+        }
+
+        // Harita Sınırları (Duvarlar)
+        p.x = Math.max(0, Math.min(MAP_SIZE, p.x));
+        p.y = Math.max(0, Math.min(MAP_SIZE, p.y));
+
+        // Yiyecek yeme kontrolü
+        foods.forEach((food, index) => {
+            const distFood = Math.hypot(p.x - food.x, p.y - food.y);
+            if (distFood < p.radius) {
+                p.radius += 0.4;
+                foods[index] = spawnFood();
+            }
+        });
+    }
+    io.emit('update', { players, foods, MAP_SIZE });
+}, 1000 / 60);
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-    console.log(`Sunucu ${PORT} portunda aktif.`);
-});
+server.listen(PORT, () => console.log(`Survive.io ${PORT} portunda!`));
