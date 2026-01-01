@@ -14,6 +14,7 @@ const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
 
 function resize() { 
     canvas.width = window.innerWidth; canvas.height = window.innerHeight; 
+    if(isMobile) document.getElementById('orientation-warning').style.display = (window.innerHeight > window.innerWidth) ? 'flex' : 'none';
 }
 window.addEventListener('resize', resize); resize();
 
@@ -42,6 +43,8 @@ document.getElementById('btn-play').onclick = () => {
     if(isMobile) {
         document.getElementById('btn-boost-mob').style.display = 'flex';
         document.getElementById('btn-eject-mob').style.display = 'flex';
+        const el = document.documentElement;
+        if (el.requestFullscreen) el.requestFullscreen().catch(() => {});
     }
     socket.emit('joinGame', name);
     document.getElementById('menu-overlay').style.display = 'none';
@@ -122,7 +125,6 @@ function drawVirus(x, y, r) {
 function drawJellyPlayer(p) {
     const points = 32, time = Date.now() * 0.006, vertices = [];
     const moveAngle = Math.atan2(p.targetY, p.targetX);
-    
     for (let i = 0; i < points; i++) {
         let a = (i / points) * Math.PI * 2;
         let w = Math.sin(time + i * 1.2) * (p.radius * (0.04 + (p.id === socket.id ? eatEffect * 0.005 : 0)));
@@ -135,7 +137,6 @@ function drawJellyPlayer(p) {
         let r = p.radius + w + s - press;
         vertices.push({ x: p.x + Math.cos(a) * r, y: p.y + Math.sin(a) * r });
     }
-
     ctx.beginPath();
     ctx.moveTo((vertices[0].x + vertices[points-1].x) / 2, (vertices[0].y + vertices[points-1].y) / 2);
     for (let i = 0; i < points; i++) {
@@ -144,7 +145,6 @@ function drawJellyPlayer(p) {
     }
     ctx.closePath(); ctx.fillStyle = p.color; ctx.fill(); 
     ctx.strokeStyle = p.isBoosting ? '#fff' : 'rgba(255,255,255,0.7)'; ctx.lineWidth = p.isBoosting ? 8 : 4; ctx.stroke();
-    
     ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(moveAngle);
     ctx.fillStyle="white"; ctx.beginPath(); ctx.arc(p.radius*0.35, -p.radius*0.2, p.radius*0.2, 0, 7); ctx.arc(p.radius*0.35, p.radius*0.2, p.radius*0.2, 0, 7); ctx.fill();
     ctx.fillStyle="black"; ctx.beginPath(); ctx.arc(p.radius*0.35+4, -p.radius*0.2, p.radius*0.1, 0, 7); ctx.arc(p.radius*0.35+4, p.radius*0.2, p.radius*0.1, 0, 7); ctx.fill();
@@ -154,9 +154,10 @@ function drawJellyPlayer(p) {
 
 function updateUI(me) {
     let sorted = Object.values(allPlayers).sort((a,b) => b.score - a.score);
-    document.getElementById('lb-list').innerHTML = sorted.slice(0, 5).map((p, i) => `<div class="lb-item"><span>${i+1}. ${p.name}</span><span>${Math.floor(p.score)}</span></div>`).join('');
+    // İsimleri sığdırmak için UI'da 8 karaktere kısıtlıyoruz
+    document.getElementById('lb-list').innerHTML = sorted.slice(0, 5).map((p, i) => `<div class="lb-item"><span>${i+1}. ${p.name.substring(0,8)}</span><span>${Math.floor(p.score)}</span></div>`).join('');
     const myPos = sorted.findIndex(p => p.id === socket.id) + 1;
-    document.getElementById('lb-player').innerHTML = `<div class="lb-item lb-own"><span>${myPos}. ${me.name}</span><span>${Math.floor(me.score)}</span></div>`;
+    document.getElementById('lb-player').innerHTML = `<div class="lb-item lb-own"><span>${myPos}. ${me.name.substring(0,8)}</span><span>${Math.floor(me.score)}</span></div>`;
 }
 
 function drawMinimap(me) {
@@ -164,7 +165,8 @@ function drawMinimap(me) {
     const s = 130 / mapSize; 
     for(let id in allPlayers) {
         const p = allPlayers[id]; 
-        mCtx.fillStyle = id === socket.id ? "#fff" : "#ff4444"; // Tüm oyuncular ve botlar kırmızı
+        mCtx.fillStyle = id === socket.id ? "#fff" : "#ff4444";
+        // Minimap ölçeği tam oranlı (radius * s) yapıldı
         let dotR = p.radius * s; 
         if(dotR < 2.5) dotR = 2.5;
         mCtx.beginPath(); mCtx.arc(p.x * s, p.y * s, dotR, 0, Math.PI*2); mCtx.fill();
