@@ -48,7 +48,7 @@ document.getElementById('btn-play').onclick = () => {
         document.getElementById('btn-boost-mob').style.display = 'flex';
         document.getElementById('btn-eject-mob').style.display = 'flex';
     }
-    
+
     socket.emit('joinGame', name);
     document.getElementById('menu-overlay').style.display = 'none';
     document.getElementById('leaderboard').style.display = 'block';
@@ -57,7 +57,6 @@ document.getElementById('btn-play').onclick = () => {
     isAlive = true;
 };
 
-// PC HAREKET FİX (Tam ekran ve Resize uyumlu)
 window.addEventListener('mousemove', (e) => {
     if (isAlive && controlType === "mouse") {
         const centerX = window.innerWidth / 2;
@@ -151,10 +150,18 @@ function drawJellyPlayer(p, isMe) {
         ctx.quadraticCurveTo(vertices[i].x, vertices[i].y, (vertices[i].x + n.x) / 2, (vertices[i].y + n.y) / 2);
     }
     ctx.closePath(); ctx.fillStyle = p.color; ctx.fill(); ctx.strokeStyle = p.isBoosting ? 'yellow' : 'white'; ctx.lineWidth = p.isBoosting ? 6 : 4; ctx.stroke();
+    
     ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(moveAngle);
-    ctx.fillStyle="white"; ctx.beginPath(); ctx.arc(p.radius*0.35, -p.radius*0.2, p.radius*0.2, 0, Math.PI*2); ctx.arc(p.radius*0.35, p.radius*0.2, p.radius*0.2, 0, Math.PI*2); ctx.fill();
-    ctx.fillStyle="black"; ctx.beginPath(); ctx.arc(p.radius*0.35+3, -p.radius*0.2, p.radius*0.1, 0, Math.PI*2); ctx.arc(p.radius*0.35+3, p.radius*0.2, p.radius*0.1, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle="white"; ctx.beginPath(); 
+    ctx.arc(p.radius * 0.35, -p.radius * 0.2, p.radius * 0.2, 0, Math.PI * 2); 
+    ctx.arc(p.radius * 0.35, p.radius * 0.2, p.radius * 0.2, 0, Math.PI * 2); 
+    ctx.fill();
+    ctx.fillStyle="black"; ctx.beginPath(); 
+    ctx.arc(p.radius * 0.35 + 3, -p.radius * 0.2, p.radius * 0.1, 0, Math.PI * 2); 
+    ctx.arc(p.radius * 0.35 + 3, p.radius * 0.2, p.radius * 0.1, 0, Math.PI * 2); 
+    ctx.fill();
     ctx.restore();
+    
     ctx.fillStyle = "white"; ctx.font = "bold 14px Arial"; ctx.textAlign = "center"; ctx.fillText(p.name, p.x, p.y - p.radius - 18);
 }
 
@@ -166,10 +173,10 @@ function updateUI(me) {
 
 function drawMinimap(me) {
     mCtx.clearRect(0,0,125,125); const s = 125 / mapSize;
-    for(let id in allPlayers) { 
-        const p = allPlayers[id]; mCtx.fillStyle = id === socket.id ? "#fff" : "#f44"; 
-        let dotR = Math.max(2, p.radius * 0.05); 
-        mCtx.beginPath(); mCtx.arc(p.x*s, p.y*s, dotR, 0, Math.PI*2); mCtx.fill(); 
+    for(let id in allPlayers) {
+        const p = allPlayers[id]; mCtx.fillStyle = id === socket.id ? "#fff" : "#f44";
+        let dotR = Math.max(2, p.radius * 0.05);
+        mCtx.beginPath(); mCtx.arc(p.x * s, p.y * s, dotR, 0, Math.PI*2); mCtx.fill();
     }
 }
 draw();
