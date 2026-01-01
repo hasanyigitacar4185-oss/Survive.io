@@ -18,12 +18,13 @@ const HighScore = mongoose.model('HighScore', new mongoose.Schema({
     name: String, score: Number, date: { type: Date, default: Date.now }
 }));
 
-const MAP_SIZE = 5000;
-const FOOD_COUNT = 325;
-const VIRUS_COUNT = 15;
+// --- AYARLAR ---
+const MAP_SIZE = 15000; 
+const FOOD_COUNT = 1000; 
+const VIRUS_COUNT = 50;  
 const INITIAL_RADIUS = 30;
 const EAT_MARGIN = 5;
-const EJECT_COST = 20;
+const EJECT_COST = 30; 
 const EJECT_THRESHOLD = 200;
 
 let players = {};
@@ -31,14 +32,19 @@ let foods = [];
 let viruses = [];
 let ejectedMasses = [];
 
+// Büyüme Hesaplama (Puan arttıkça büyüme yavaşlar, lag istismarını önler)
+function calculateRadius(score) {
+    return INITIAL_RADIUS + Math.sqrt(score) * 1.5;
+}
+
 function getSafeSpawn() {
     let x, y, isSafe = false, attempts = 0;
     while (!isSafe && attempts < 20) {
-        x = Math.random() * (MAP_SIZE - 400) + 200;
-        y = Math.random() * (MAP_SIZE - 400) + 200;
+        x = Math.random() * (MAP_SIZE - 1000) + 500;
+        y = Math.random() * (MAP_SIZE - 1000) + 500;
         isSafe = true;
         for (let id in players) {
-            if (Math.hypot(x - players[id].x, y - players[id].y) < 600) { isSafe = false; break; }
+            if (Math.hypot(x - players[id].x, y - players[id].y) < 800) { isSafe = false; break; }
         }
         attempts++;
     }
@@ -51,14 +57,16 @@ function spawnFood(index) {
         x: Math.floor(Math.random() * MAP_SIZE), 
         y: Math.floor(Math.random() * MAP_SIZE), 
         c: `hsl(${Math.random() * 360}, 70%, 50%)`, 
-        r: 7 
+        r: 8 
     };
     if (index !== undefined) foods[index] = f;
     return f;
 }
 for (let i = 0; i < FOOD_COUNT; i++) foods.push(spawnFood(i));
 
-function spawnVirus() { return { x: Math.random() * (MAP_SIZE - 800) + 400, y: Math.random() * (MAP_SIZE - 800) + 400, r: 85 }; }
+function spawnVirus() { 
+    return { x: Math.random() * (MAP_SIZE - 1000) + 500, y: Math.random() * (MAP_SIZE - 1000) + 500, r: 90 }; 
+}
 for (let i = 0; i < VIRUS_COUNT; i++) viruses.push(spawnVirus());
 
 async function getScores() {
@@ -66,11 +74,13 @@ async function getScores() {
     const now = new Date(Date.now() + trOffset);
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const month = new Date(now.getFullYear(), now.getMonth(), 1);
-    return {
-        daily: await HighScore.find({ date: { $gte: today } }).sort({ score: -1 }).limit(10),
-        monthly: await HighScore.find({ date: { $gte: month } }).sort({ score: -1 }).limit(10),
-        allTime: await HighScore.find().sort({ score: -1 }).limit(10)
-    };
+    try {
+        return {
+            daily: await HighScore.find({ date: { $gte: today } }).sort({ score: -1 }).limit(10),
+            monthly: await HighScore.find({ date: { $gte: month } }).sort({ score: -1 }).limit(10),
+            allTime: await HighScore.find().sort({ score: -1 }).limit(10)
+        };
+    } catch (e) { return { daily: [], monthly: [], allTime: [] }; }
 }
 
 io.on('connection', async (socket) => {
@@ -86,7 +96,9 @@ io.on('connection', async (socket) => {
         socket.emit('initGameData', { foods, viruses });
     });
 
-    socket.on('playerMove', (data) => { if (players[socket.id]) { players[socket.id].targetX = data.x; players[socket.id].targetY = data.y; } });
+    socket.on('playerMove', (data) => { 
+        if (players[socket.id]) { players[socket.id].targetX = data.x; players[socket.id].targetY = data.y; } 
+    });
 
     socket.on('triggerBoost', () => {
         const p = players[socket.id];
@@ -100,15 +112,17 @@ io.on('connection', async (socket) => {
     socket.on('ejectMass', () => {
         const p = players[socket.id];
         if (p && p.score >= EJECT_THRESHOLD) {
-            p.score -= EJECT_COST; p.radius -= 1.5;
+            p.score -= EJECT_COST; 
+            p.radius = calculateRadius(p.score);
             const angle = Math.atan2(p.targetY, p.targetX);
-            ejectedMasses.push({ x: p.x + Math.cos(angle)*p.radius, y: p.y + Math.sin(angle)*p.radius, c: p.color, r: 18, angle: angle, speed: 22 });
+            ejectedMasses.push({ x: p.x + Math.cos(angle)*p.radius, y: p.y + Math.sin(angle)*p.radius, c: p.color, r: 20, angle: angle, speed: 25 });
         }
     });
 
     socket.on('disconnect', async () => {
         if(players[socket.id] && players[socket.id].score > 30) {
-            await new HighScore({ name: players[socket.id].name, score: Math.floor(players[socket.id].score) }).save();
+            const hs = new HighScore({ name: players[socket.id].name, score: Math.floor(players[socket.id].score) });
+            await hs.save();
             io.emit('globalScoresUpdate', await getScores());
         }
         delete players[socket.id];
@@ -117,7 +131,10 @@ io.on('connection', async (socket) => {
 
 setInterval(() => {
     ejectedMasses.forEach((m, idx) => {
-        if (m.speed > 0) { m.x += Math.cos(m.angle)*m.speed; m.y += Math.sin(m.angle)*m.speed; m.speed *= 0.92; if(m.speed < 1) m.speed = 0; }
+        if (m.speed > 0) { 
+            m.x += Math.cos(m.angle)*m.speed; m.y += Math.sin(m.angle)*m.speed; 
+            m.speed *= 0.92; if(m.speed < 1) m.speed = 0; 
+        }
         m.x = Math.max(20, Math.min(MAP_SIZE-20, m.x)); m.y = Math.max(20, Math.min(MAP_SIZE-20, m.y));
     });
 
@@ -125,6 +142,7 @@ setInterval(() => {
         let p = players[id];
         let angle = Math.atan2(p.targetY, p.targetX);
         let dist = Math.sqrt(p.targetX * p.targetX + p.targetY * p.targetY);
+        
         if (dist > 5) {
             let speed = (p.isBoosting ? 18 : 6.5) * Math.pow(p.radius / INITIAL_RADIUS, -0.15);
             p.x += Math.cos(angle) * (dist < 50 ? (speed * dist / 50) : speed);
@@ -134,17 +152,26 @@ setInterval(() => {
 
         foods.forEach((f, i) => {
             if (Math.hypot(p.x - f.x, p.y - f.y) < p.radius) {
-                p.radius += 0.4; p.score += 1.5; io.emit('foodCollected', { i: i, newF: spawnFood(i) });
+                p.score += 2; 
+                p.radius = calculateRadius(p.score);
+                io.emit('foodCollected', { i: i, newF: spawnFood(i) });
             }
         });
 
         ejectedMasses.forEach((m, idx) => {
-            if (Math.hypot(p.x - m.x, p.y - m.y) < p.radius) { p.score += EJECT_COST; p.radius += 2.5; ejectedMasses.splice(idx, 1); }
+            if (Math.hypot(p.x - m.x, p.y - m.y) < p.radius) { 
+                p.score += EJECT_COST * 0.8; 
+                p.radius = calculateRadius(p.score);
+                ejectedMasses.splice(idx, 1); 
+            }
         });
 
         viruses.forEach((v, idx) => {
-            if (Math.hypot(p.x - v.x, p.y - v.y) < p.radius + 15 && p.score > 200) {
-                p.score *= 0.9; p.radius *= 0.95; viruses[idx] = spawnVirus(); io.emit('updateViruses', viruses);
+            if (Math.hypot(p.x - v.x, p.y - v.y) < p.radius + 15 && p.score > 300) {
+                p.score *= 0.75;
+                p.radius = calculateRadius(p.score);
+                viruses[idx] = spawnVirus(); 
+                io.emit('updateViruses', viruses);
             }
         });
 
@@ -152,7 +179,8 @@ setInterval(() => {
             if (id === oid) return;
             let o = players[oid];
             if (o && Math.hypot(p.x - o.x, p.y - o.y) < p.radius && p.score > o.score + EAT_MARGIN) {
-                p.score += Math.floor(o.score * 0.5) + 40; p.radius += (o.radius * 0.4);
+                p.score += Math.floor(o.score * 0.6); 
+                p.radius = calculateRadius(p.score);
                 io.to(oid).emit('dead', { score: o.score }); delete players[oid];
             }
         });
