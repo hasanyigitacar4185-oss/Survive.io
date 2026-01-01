@@ -4,7 +4,7 @@ const mCanvas = document.getElementById('minimap-canvas');
 const mCtx = mCanvas.getContext('2d');
 const socket = io();
 
-let allEntities = {}, allFoods = [], viruses = [], ejectedMasses = [], mapSize = 15000;
+let allPlayers = {}, allFoods = [], viruses = [], ejectedMasses = [], mapSize = 15000;
 let isAlive = false, controlType = "mouse", globalData = {}, boostCharge = 100;
 const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
 
@@ -46,7 +46,7 @@ function renderScores(t) {
 socket.on('initGameData', (d) => { allFoods = d.foods; viruses = d.viruses; });
 socket.on('updateViruses', (v) => viruses = v);
 socket.on('foodCollected', (d) => allFoods[d.i] = d.newF);
-socket.on('updateState', (d) => { allEntities = d.players; ejectedMasses = d.ejectedMasses; });
+socket.on('updateState', (d) => { allPlayers = d.players; ejectedMasses = d.ejectedMasses; });
 socket.on('globalScoresUpdate', (d) => { globalData = d; renderScores('daily'); });
 socket.on('boostActivated', () => boostCharge = 0);
 socket.on('dead', (d) => { isAlive = false; document.getElementById('final-score').innerText = `Skor: ${Math.floor(d.score)}`; document.getElementById('death-overlay').style.display = 'flex'; });
@@ -57,7 +57,7 @@ document.getElementById('btn-boost-mob').ontouchstart = (e) => { e.preventDefaul
 document.getElementById('btn-eject-mob').ontouchstart = (e) => { e.preventDefault(); socket.emit('ejectMass'); };
 
 function draw() {
-    const me = allEntities[socket.id];
+    const me = allPlayers[socket.id];
     ctx.fillStyle = '#0a0a0a'; ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     if (me && isAlive) {
@@ -66,7 +66,7 @@ function draw() {
         document.getElementById('boost-bar').style.background = boostCharge >= 100 ? "#ffeb3b" : "white";
 
         let zoom = Math.pow(isMobile ? 24 : 32, 0.45) / Math.pow(me.radius, 0.45);
-        if (zoom < 0.1) zoom = 0.1;
+        if (zoom < 0.12) zoom = 0.12;
 
         ctx.save();
         ctx.translate(canvas.width/2, canvas.height/2);
@@ -79,10 +79,10 @@ function draw() {
         ctx.stroke();
         ctx.strokeStyle = '#f33'; ctx.lineWidth = 40; ctx.strokeRect(0,0,mapSize,mapSize);
 
-        for(let f of allFoods) if (Math.abs(me.x-f.x)<2500 && Math.abs(me.y-f.y)<2000) { ctx.fillStyle=f.c; ctx.beginPath(); ctx.arc(f.x,f.y,f.r,0,Math.PI*2); ctx.fill(); }
+        for(let f of allFoods) if (Math.abs(me.x-f.x)<2500 && Math.abs(me.y-f.y)<1500) { ctx.fillStyle=f.c; ctx.beginPath(); ctx.arc(f.x,f.y,f.r,0,Math.PI*2); ctx.fill(); }
         for(let m of ejectedMasses) { ctx.fillStyle=m.c; ctx.beginPath(); ctx.arc(m.x,m.y,m.r,0,Math.PI*2); ctx.fill(); ctx.strokeStyle='black'; ctx.lineWidth=2; ctx.stroke(); }
         for(let v of viruses) drawVirus(v.x, v.y, v.r);
-        for(let id in allEntities) drawJellyPlayer(allEntities[id], id === socket.id);
+        for(let id in allPlayers) drawJellyPlayer(allPlayers[id], id === socket.id);
         
         ctx.restore();
         updateUI(me);
@@ -122,15 +122,15 @@ function drawJellyPlayer(p, isMe) {
 }
 
 function updateUI(me) {
-    let sorted = Object.values(allEntities).sort((a,b) => b.score - a.score);
+    let sorted = Object.values(allPlayers).sort((a,b) => b.score - a.score);
     document.getElementById('lb-list').innerHTML = sorted.slice(0, 5).map((p, i) => `<div class="lb-item"><span>${i+1}. ${p.name}</span><span>${Math.floor(p.score)}</span></div>`).join('');
     document.getElementById('lb-player').innerHTML = `<div class="lb-item lb-own"><span>${sorted.findIndex(p => p.id === socket.id)+1}. ${me.name}</span><span>${Math.floor(me.score)}</span></div>`;
 }
 
 function drawMinimap(me) {
     mCtx.clearRect(0,0,125,125); const s = 125 / mapSize;
-    for(let id in allEntities) { 
-        const p = allEntities[id]; mCtx.fillStyle = id === socket.id ? "#fff" : "#f44"; 
+    for(let id in allPlayers) { 
+        const p = allPlayers[id]; mCtx.fillStyle = id === socket.id ? "#fff" : "#f44"; 
         mCtx.beginPath(); mCtx.arc(p.x*s, p.y*s, Math.max(2, p.radius*0.02), 0, Math.PI*2); mCtx.fill(); 
     }
 }
