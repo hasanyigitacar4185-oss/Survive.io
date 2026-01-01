@@ -28,14 +28,14 @@ const EJECT_COST = 30;
 const EJECT_THRESHOLD = 200;
 const BOT_COUNT = 10;
 
-// İngilizce Bot İsim Havuzu
-const botNames = ["Striker", "Storm_Hunter", "Pro_Gamer", "Shadow_Walker", "Neon_Light", "Fast_and_Furious", "Eagle_Eye", "Alpha_One", "Viper", "Ghost_Player", "Iron_Man", "Sky_High", "Bullet_Proof", "Silent_Killer", "Warrior"];
-
+// Değişken Tanımları
 let players = {};
 let bots = {};
 let foods = [];
 let viruses = [];
 let ejectedMasses = [];
+
+const botNames = ["Striker", "StormHunter", "ProGamer", "ShadowWalker", "NeonLight", "FastFurious", "EagleEye", "AlphaOne", "Viper", "GhostPlayer", "BulletProof", "SilentKiller", "Warrior", "Nova", "Titan"];
 
 function calculateRadius(score) {
     return INITIAL_RADIUS + Math.sqrt(score) * 6.0;
@@ -54,34 +54,26 @@ for (let i = 0; i < VIRUS_COUNT; i++) viruses.push(spawnVirus());
 // --- BOT YÖNETİMİ ---
 function createBot(id) {
     const startScore = Math.floor(Math.random() * 2500);
-    let name = botNames[Math.floor(Math.random() * botNames.length)];
+    let name = botNames[Math.floor(Math.random() * botNames.length)] + "_" + Math.floor(Math.random()*99);
     bots[id] = {
-        id: id, isBot: true, name: name + "_" + Math.floor(Math.random()*99),
-        x: Math.random() * MAP_SIZE, y: Math.random() * MAP_SIZE,
-        color: `hsl(${Math.random() * 360}, 60%, 50%)`,
-        score: startScore, radius: calculateRadius(startScore),
-        targetX: 0, targetY: 0, angle: Math.random() * Math.PI * 2,
-        nextScoreTime: Date.now() + Math.random() * 2000
+        id: id, isBot: true, name: name, x: Math.random() * MAP_SIZE, y: Math.random() * MAP_SIZE,
+        color: `hsl(${Math.random() * 360}, 60%, 50%)`, score: startScore, radius: calculateRadius(startScore),
+        angle: Math.random() * Math.PI * 2, nextScoreTime: Date.now() + Math.random() * 2000,
+        thinkTimer: 0
     };
 }
 
-function clearBots() { bots = {}; }
 function checkBots() {
-    const playerCount = Object.keys(players).length;
-    if (playerCount > 0 && Object.keys(bots).length === 0) {
+    const pCount = Object.keys(players).length;
+    if (pCount > 0 && Object.keys(bots).length === 0) {
         for(let i=0; i<BOT_COUNT; i++) createBot("bot_" + i);
-    } else if (playerCount === 0) {
-        clearBots();
-    }
+    } else if (pCount === 0) { bots = {}; }
 }
 
 async function getScores() {
     try {
         const today = new Date(); today.setHours(0,0,0,0);
-        return {
-            daily: await HighScore.find({ date: { $gte: today } }).sort({ score: -1 }).limit(10),
-            allTime: await HighScore.find().sort({ score: -1 }).limit(10)
-        };
+        return { daily: await HighScore.find({ date: { $gte: today } }).sort({ score: -1 }).limit(10), allTime: await HighScore.find().sort({ score: -1 }).limit(10) };
     } catch (e) { return { daily: [], allTime: [] }; }
 }
 
@@ -91,9 +83,8 @@ io.on('connection', async (socket) => {
 
     socket.on('joinGame', (username) => {
         players[socket.id] = {
-            id: socket.id, name: username || "Adsız", x: Math.random() * MAP_SIZE, y: Math.random() * MAP_SIZE,
-            color: `hsl(${Math.random() * 360}, 80%, 60%)`, radius: INITIAL_RADIUS,
-            targetX: 0, targetY: 0, score: 0, lastBoost: 0, isBoosting: false
+            id: socket.id, name: username || "Guest", x: Math.random() * MAP_SIZE, y: Math.random() * MAP_SIZE,
+            color: `hsl(${Math.random() * 360}, 80%, 60%)`, radius: INITIAL_RADIUS, targetX: 0, targetY: 0, score: 0, lastBoost: 0, isBoosting: false
         };
         socket.emit('initGameData', { foods, viruses });
         checkBots();
@@ -125,48 +116,46 @@ io.on('connection', async (socket) => {
             io.emit('globalScoresUpdate', await getScores());
         }
         delete players[socket.id];
-        checkBots(); // Kimse kalmadıysa botları temizle
+        checkBots();
     });
 });
 
 setInterval(() => {
-    const activePlayerCount = Object.keys(players).length;
-    if (activePlayerCount === 0) return; // Sunucu boşsa hiçbir işlem yapma (Ping ve CPU dostu)
+    const pCount = Object.keys(players).length;
+    if (pCount === 0) return;
 
     ejectedMasses.forEach((m) => {
         if (m.speed > 0) { m.x += Math.cos(m.angle)*m.speed; m.y += Math.sin(m.angle)*m.speed; m.speed *= 0.92; if(m.speed < 1) m.speed = 0; }
         m.x = Math.max(20, Math.min(MAP_SIZE-20, m.x)); m.y = Math.max(20, Math.min(MAP_SIZE-20, m.y));
     });
 
-    const allEntities = { ...players, ...bots };
-
-    for (let id in allEntities) {
-        let p = allEntities[id];
-        
+    const all = { ...players, ...bots };
+    for (let id in all) {
+        let p = all[id];
         if(p.isBot) {
-            if(Date.now() > p.nextScoreTime) {
-                p.score += 1; p.radius = calculateRadius(p.score);
-                p.nextScoreTime = Date.now() + Math.random() * 2000;
-            }
-
-            let closest = null, minDist = 800;
-            for(let oid in allEntities) {
-                if(id === oid) continue;
-                let dist = Math.hypot(p.x - allEntities[oid].x, p.y - allEntities[oid].y);
-                if(dist < minDist) { minDist = dist; closest = allEntities[oid]; }
-            }
-
-            if(closest) {
-                let angleTo = Math.atan2(closest.y - p.y, closest.x - p.x);
-                p.angle = (p.score > closest.score + EAT_MARGIN) ? angleTo : angleTo + Math.PI;
-            } else { p.angle += (Math.random() - 0.5) * 0.1; }
+            // Pasif Büyüme
+            if(Date.now() > p.nextScoreTime) { p.score += 1; p.radius = calculateRadius(p.score); p.nextScoreTime = Date.now() + Math.random() * 2000; }
             
+            // Optimize Bot AI (Saniyede sadece 6 kez düşünür)
+            p.thinkTimer++;
+            if(p.thinkTimer > 10) {
+                let closest = null, minDist = 800;
+                for(let oid in all) {
+                    if(id === oid) continue;
+                    let dist = Math.hypot(p.x - all[oid].x, p.y - all[oid].y);
+                    if(dist < minDist) { minDist = dist; closest = all[oid]; }
+                }
+                if(closest) {
+                    let angleTo = Math.atan2(closest.y - p.y, closest.x - p.x);
+                    p.angle = (p.score > closest.score + EAT_MARGIN) ? angleTo : angleTo + Math.PI;
+                } else { p.angle += (Math.random() - 0.5) * 0.2; }
+                p.thinkTimer = 0;
+            }
             let speed = 5.5 * Math.pow(p.radius / INITIAL_RADIUS, -0.15);
             p.x += Math.cos(p.angle) * speed; p.y += Math.sin(p.angle) * speed;
             p.targetX = Math.cos(p.angle) * 100; p.targetY = Math.sin(p.angle) * 100;
         } else {
-            let angle = Math.atan2(p.targetY, p.targetX);
-            let dist = Math.sqrt(p.targetX * p.targetX + p.targetY * p.targetY);
+            let angle = Math.atan2(p.targetY, p.targetX), dist = Math.sqrt(p.targetX*p.targetX + p.targetY*p.targetY);
             if (dist > 5) {
                 let speed = (p.isBoosting ? 18 : 6.5) * Math.pow(p.radius / INITIAL_RADIUS, -0.15);
                 p.x += Math.cos(angle) * (dist < 50 ? (speed * dist / 50) : speed);
@@ -175,25 +164,28 @@ setInterval(() => {
         }
         p.x = Math.max(0, Math.min(MAP_SIZE, p.x)); p.y = Math.max(0, Math.min(MAP_SIZE, p.y));
 
+        // Yemek (Botlar hariç)
         if(!p.isBot) {
-            foods.forEach((f, i) => {
-                if (Math.hypot(p.x - f.x, p.y - f.y) < p.radius) {
+            for(let i=0; i<foods.length; i++) {
+                let f = foods[i];
+                if (Math.abs(p.x - f.x) < p.radius && Math.abs(p.y - f.y) < p.radius) {
                     p.score += 2; p.radius = calculateRadius(p.score);
                     io.emit('foodCollected', { i: i, newF: spawnFood(i) });
                 }
-            });
-        }
-
-        for(let oid in allEntities) {
-            if(id === oid) continue;
-            let o = allEntities[oid];
-            if (o && Math.hypot(p.x - o.x, p.y - o.y) < p.radius && p.score > o.score + EAT_MARGIN) {
-                p.score += Math.floor(o.score * 0.6); p.radius = calculateRadius(p.score);
-                if(o.isBot) { createBot(oid); }
-                else { io.to(oid).emit('dead', { score: o.score }); delete players[oid]; }
             }
         }
 
+        // Yeme Mekaniği
+        for(let oid in all) {
+            if(id === oid) continue;
+            let o = all[oid];
+            if (o && Math.hypot(p.x - o.x, p.y - o.y) < p.radius && p.score > o.score + EAT_MARGIN) {
+                p.score += Math.floor(o.score * 0.6); p.radius = calculateRadius(p.score);
+                if(o.isBot) { createBot(oid); } else { io.to(oid).emit('dead', { score: o.score }); delete players[oid]; }
+            }
+        }
+
+        // Virüs (Sınır 250)
         viruses.forEach((v, idx) => {
             if (Math.hypot(p.x - v.x, p.y - v.y) < p.radius + 15 && p.score > 250) {
                 p.score *= 0.9; p.radius = calculateRadius(p.score);
@@ -202,6 +194,7 @@ setInterval(() => {
             }
         });
     }
+    // Sadece gerekli veriyi gönder (Paket küçültme)
     io.emit('updateState', { players, bots, ejectedMasses });
 }, 1000 / 60);
 
