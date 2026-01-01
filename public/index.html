@@ -37,13 +37,19 @@
         }
         #boost-bar { width: 0%; height: 100%; background: #fff; }
 
-        #leaderboard { position: fixed; top: 15px; right: 15px; background: rgba(0,0,0,0.5); padding: 12px; border-radius: 12px; width: 140px; font-size: 13px; z-index: 10; border: 1px solid rgba(255,255,255,0.1); }
-        .lb-item { display: flex; justify-content: space-between; margin-bottom: 4px; }
+        #leaderboard { position: fixed; top: 15px; right: 15px; background: rgba(0,0,0,0.5); padding: 12px; border-radius: 12px; width: 150px; font-size: 13px; z-index: 10; border: 1px solid rgba(255,255,255,0.1); }
+        .lb-item { display: flex; justify-content: space-between; margin-bottom: 4px; align-items: center; }
+        
+        /* İSİM SIĞDIRMA DÜZELTMESİ (EKLEDİĞİM KISIM) */
+        .lb-item span:first-child { 
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis; 
+            max-width: 90px; display: inline-block;
+        }
+
         .lb-own { color: #ffeb3b; font-weight: bold; border-top: 1px solid rgba(255,255,255,0.2); margin-top: 5px; padding-top: 5px; }
 
         #minimap { position: fixed; bottom: 15px; right: 15px; width: 130px; height: 130px; background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.2); border-radius: 12px; z-index: 10; }
 
-        /* Mobil Butonlar */
         .btn-mob { 
             position: fixed; width: 65px; height: 65px; background: rgba(255,255,255,0.1); 
             border: 2px solid rgba(255,255,255,0.4); border-radius: 50%; z-index: 95; 
