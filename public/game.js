@@ -14,8 +14,6 @@ const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
 
 function resize() { 
     canvas.width = window.innerWidth; canvas.height = window.innerHeight; 
-    if(isMobile && window.innerHeight > window.innerWidth) document.getElementById('orientation-warning').style.display = 'flex';
-    else document.getElementById('orientation-warning').style.display = 'none';
 }
 window.addEventListener('resize', resize); resize();
 
@@ -28,13 +26,7 @@ socket.on('heartbeat_res', (t) => {
 socket.on('initGameData', (data) => { allFoods = data.foods; viruses = data.viruses; });
 socket.on('updateViruses', (v) => viruses = v);
 socket.on('foodCollected', (data) => { if(allFoods[data.i]) { allFoods[data.i] = data.newF; if(isAlive) eatEffect = 15; } });
-
-socket.on('updateState', (data) => { 
-    // Gelen botları ve oyuncuları tek bir objede birleştir
-    allPlayers = { ...data.players, ...data.bots }; 
-    ejectedMasses = data.ejectedMasses; 
-});
-
+socket.on('updateState', (data) => { allPlayers = { ...data.players, ...data.bots }; ejectedMasses = data.ejectedMasses; });
 socket.on('globalScoresUpdate', (data) => { globalData = data; });
 
 document.getElementById('btn-play').onclick = () => {
@@ -92,7 +84,6 @@ function draw() {
         ctx.scale(zoom, zoom);
         ctx.translate(-me.x, -me.y);
 
-        // Izgara
         ctx.strokeStyle = '#121212'; ctx.lineWidth = 4; ctx.beginPath();
         for(let x=0; x<=mapSize; x+=500) { ctx.moveTo(x,0); ctx.lineTo(x,mapSize); }
         for(let y=0; y<=mapSize; y+=500) { ctx.moveTo(0,y); ctx.lineTo(mapSize,y); }
@@ -173,10 +164,9 @@ function drawMinimap(me) {
     const s = 130 / mapSize; 
     for(let id in allPlayers) {
         const p = allPlayers[id]; 
-        mCtx.fillStyle = id === socket.id ? "#fff" : (p.isBot ? "#ff9800" : "#ff4444");
-        // Minimap Düzeltmesi: Gerçek ölçekli çizim
+        mCtx.fillStyle = id === socket.id ? "#fff" : "#ff4444"; // Tüm oyuncular ve botlar kırmızı
         let dotR = p.radius * s; 
-        if(dotR < 2) dotR = 2; // Çok küçükse görünür kıl
+        if(dotR < 2.5) dotR = 2.5;
         mCtx.beginPath(); mCtx.arc(p.x * s, p.y * s, dotR, 0, Math.PI*2); mCtx.fill();
     }
 }
