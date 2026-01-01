@@ -66,7 +66,7 @@ function draw() {
         document.getElementById('boost-bar').style.background = boostCharge >= 100 ? "#ffeb3b" : "white";
 
         let zoom = Math.pow(isMobile ? 24 : 32, 0.45) / Math.pow(me.radius, 0.45);
-        if (zoom < 0.12) zoom = 0.12;
+        if (zoom < 0.1) zoom = 0.1;
 
         ctx.save();
         ctx.translate(canvas.width/2, canvas.height/2);
@@ -77,9 +77,9 @@ function draw() {
         for(let x=0; x<=mapSize; x+=1000) { ctx.moveTo(x,0); ctx.lineTo(x,mapSize); }
         for(let y=0; y<=mapSize; y+=1000) { ctx.moveTo(0,y); ctx.lineTo(mapSize,y); }
         ctx.stroke();
-        ctx.strokeStyle = '#f33'; ctx.lineWidth = 30; ctx.strokeRect(0,0,mapSize,mapSize);
+        ctx.strokeStyle = '#f33'; ctx.lineWidth = 40; ctx.strokeRect(0,0,mapSize,mapSize);
 
-        for(let f of allFoods) if (Math.abs(me.x-f.x)<2500 && Math.abs(me.y-f.y)<1500) { ctx.fillStyle=f.c; ctx.beginPath(); ctx.arc(f.x,f.y,f.r,0,Math.PI*2); ctx.fill(); }
+        for(let f of allFoods) if (Math.abs(me.x-f.x)<2500 && Math.abs(me.y-f.y)<2000) { ctx.fillStyle=f.c; ctx.beginPath(); ctx.arc(f.x,f.y,f.r,0,Math.PI*2); ctx.fill(); }
         for(let m of ejectedMasses) { ctx.fillStyle=m.c; ctx.beginPath(); ctx.arc(m.x,m.y,m.r,0,Math.PI*2); ctx.fill(); ctx.strokeStyle='black'; ctx.lineWidth=2; ctx.stroke(); }
         for(let v of viruses) drawVirus(v.x, v.y, v.r);
         for(let id in allEntities) drawJellyPlayer(allEntities[id], id === socket.id);
@@ -99,10 +99,10 @@ function drawVirus(x, y, r) {
 
 function drawJellyPlayer(p, isMe) {
     const points = 24, time = Date.now() * 0.006, vertices = [];
-    const moveAngle = Math.atan2(p.targetY, p.targetX);
+    const moveAngle = Math.atan2(p.targetY || 0, p.targetX || 0);
     for (let i = 0; i < points; i++) {
         let a = (i / points) * Math.PI * 2, w = Math.sin(time + i * 1.5) * (p.radius * 0.03);
-        let s = (Math.abs(p.targetX) > 5 || Math.abs(p.targetY) > 5) ? Math.cos(a - moveAngle) * (p.radius * (p.isBoosting ? 0.3 : 0.15)) : 0;
+        let s = (Math.abs(p.targetX||0) > 5 || Math.abs(p.targetY||0) > 5) ? Math.cos(a - moveAngle) * (p.radius * (p.isBoosting ? 0.3 : 0.15)) : 0;
         let press = 0;
         if (p.x < p.radius + 20) press += Math.max(0, (p.radius + 20 - p.x) * -Math.cos(a));
         if (mapSize - p.x < p.radius + 20) press += Math.max(0, (p.radius + 20 - (mapSize - p.x)) * Math.cos(a));
