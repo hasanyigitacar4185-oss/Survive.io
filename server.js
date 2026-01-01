@@ -20,8 +20,8 @@ const HighScore = mongoose.model('HighScore', new mongoose.Schema({
 
 // --- AYARLAR ---
 const MAP_SIZE = 15000; 
-const FOOD_COUNT = 1000; 
-const VIRUS_COUNT = 50;  
+const FOOD_COUNT = 3000; // 3 katına çıkarıldı
+const VIRUS_COUNT = 30;  // 30 adet yapıldı
 const INITIAL_RADIUS = 30;
 const EAT_MARGIN = 5;
 const EJECT_COST = 30; 
@@ -32,22 +32,13 @@ let foods = [];
 let viruses = [];
 let ejectedMasses = [];
 
-// Büyüme Hesaplama (Puan arttıkça büyüme yavaşlar, lag istismarını önler)
 function calculateRadius(score) {
     return INITIAL_RADIUS + Math.sqrt(score) * 1.5;
 }
 
 function getSafeSpawn() {
-    let x, y, isSafe = false, attempts = 0;
-    while (!isSafe && attempts < 20) {
-        x = Math.random() * (MAP_SIZE - 1000) + 500;
-        y = Math.random() * (MAP_SIZE - 1000) + 500;
-        isSafe = true;
-        for (let id in players) {
-            if (Math.hypot(x - players[id].x, y - players[id].y) < 800) { isSafe = false; break; }
-        }
-        attempts++;
-    }
+    let x = Math.random() * (MAP_SIZE - 1000) + 500;
+    let y = Math.random() * (MAP_SIZE - 1000) + 500;
     return { x, y };
 }
 
@@ -85,6 +76,9 @@ async function getScores() {
 
 io.on('connection', async (socket) => {
     socket.emit('globalScoresUpdate', await getScores());
+
+    // Ping Mekanizması
+    socket.on('heartbeat', (t) => { socket.emit('heartbeat_res', t); });
 
     socket.on('joinGame', (username) => {
         const spawn = getSafeSpawn();
@@ -168,10 +162,15 @@ setInterval(() => {
 
         viruses.forEach((v, idx) => {
             if (Math.hypot(p.x - v.x, p.y - v.y) < p.radius + 15 && p.score > 300) {
-                p.score *= 0.75;
+                p.score *= 0.9; // %10 Hasar
                 p.radius = calculateRadius(p.score);
-                viruses[idx] = spawnVirus(); 
+                // Virüsü kaldır ve 30 saniye sonra rastgele yerde doğur
+                viruses.splice(idx, 1);
                 io.emit('updateViruses', viruses);
+                setTimeout(() => {
+                    viruses.push(spawnVirus());
+                    io.emit('updateViruses', viruses);
+                }, 30000);
             }
         });
 
