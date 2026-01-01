@@ -12,8 +12,26 @@ let lastPingTime = 0, currentPing = 0, eatEffect = 0;
 
 const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
 
-function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
+function resize() { 
+    canvas.width = window.innerWidth; canvas.height = window.innerHeight; 
+    if(isMobile) checkOrientation();
+}
 window.addEventListener('resize', resize); resize();
+
+function checkOrientation() {
+    const warning = document.getElementById('orientation-warning');
+    if(window.innerHeight > window.innerWidth) { warning.style.display = 'flex'; }
+    else { warning.style.display = 'none'; }
+}
+
+function enterFullScreen() {
+    const el = document.documentElement;
+    if (el.requestFullscreen) el.requestFullscreen().catch(() => {});
+    else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+    if(screen.orientation && screen.orientation.lock) {
+        screen.orientation.lock('landscape').catch(() => {});
+    }
+}
 
 setInterval(() => { if(socket.connected) { lastPingTime = Date.now(); socket.emit('heartbeat', lastPingTime); } }, 2000);
 socket.on('heartbeat_res', (t) => {
@@ -24,21 +42,29 @@ socket.on('heartbeat_res', (t) => {
 socket.on('initGameData', (data) => { allFoods = data.foods; viruses = data.viruses; });
 socket.on('updateViruses', (v) => viruses = v);
 socket.on('foodCollected', (data) => { 
-    if(allFoods[data.i]) { allFoods[data.i] = data.newF; eatEffect = 15; } // Yeme titremesi başlat
+    if(allFoods[data.i]) { allFoods[data.i] = data.newF; eatEffect = 15; }
 });
 socket.on('updateState', (data) => { allPlayers = data.players; ejectedMasses = data.ejectedMasses; });
 socket.on('globalScoresUpdate', (data) => { globalData = data; });
 
 document.getElementById('btn-play').onclick = () => {
+    if(isMobile) enterFullScreen();
     const name = document.getElementById('username').value;
     const selected = document.getElementById('control-type').value;
     controlType = (selected === "auto") ? (isMobile ? "joystick" : "mouse") : selected;
+    
     if (controlType === "joystick") {
         document.getElementById('joystick-zone').style.display = 'block';
         nipplejs.create({ zone: document.getElementById('joystick-zone'), mode: 'static', position: {left:'50%', top:'50%'}, color:'white', size:100 })
             .on('move', (e, d) => socket.emit('playerMove', { x: d.vector.x*100, y: -d.vector.y*100 }))
             .on('end', () => socket.emit('playerMove', { x: 0, y: 0 }));
     }
+    
+    if(isMobile) {
+        document.getElementById('btn-boost-mob').style.display = 'flex';
+        document.getElementById('btn-eject-mob').style.display = 'flex';
+    }
+
     socket.emit('joinGame', name);
     document.getElementById('menu-overlay').style.display = 'none';
     document.getElementById('leaderboard').style.display = 'block';
@@ -57,6 +83,10 @@ window.addEventListener('mousedown', (e) => {
     if(e.button === 2) socket.emit('triggerBoost');
 });
 
+// Mobil Buton Eventleri
+document.getElementById('btn-boost-mob').ontouchstart = (e) => { e.preventDefault(); socket.emit('triggerBoost'); };
+document.getElementById('btn-eject-mob').ontouchstart = (e) => { e.preventDefault(); socket.emit('ejectMass'); };
+
 socket.on('boostActivated', () => { boostCharge = 0; });
 socket.on('dead', (d) => { isAlive = false; document.getElementById('final-score').innerText = `Skor: ${Math.floor(d.score)}`; document.getElementById('death-overlay').style.display = 'flex'; });
 
@@ -65,20 +95,18 @@ function draw() {
     ctx.fillStyle = '#050505'; ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     if (me && isAlive) {
-        // Boost Bar Güncelleme
         if (boostCharge < 100) boostCharge += (100 / (15 * 60));
         boostBar.style.width = boostCharge + "%";
         boostBar.style.background = boostCharge >= 100 ? "#4CAF50" : "#fff";
 
         let zoom = Math.pow(isMobile ? 24 : 30, 0.45) / Math.pow(me.radius, 0.45);
-        if (zoom < 0.25) zoom = 0.25;
+        if (zoom < 0.22) zoom = 0.22;
 
         ctx.save();
         ctx.translate(canvas.width/2, canvas.height/2);
         ctx.scale(zoom, zoom);
         ctx.translate(-me.x, -me.y);
 
-        // Izgara
         ctx.strokeStyle = '#121212'; ctx.lineWidth = 4; ctx.beginPath();
         for(let x=0; x<=mapSize; x+=500) { ctx.moveTo(x,0); ctx.lineTo(x,mapSize); }
         for(let y=0; y<=mapSize; y+=500) { ctx.moveTo(0,y); ctx.lineTo(mapSize,y); }
@@ -100,7 +128,7 @@ function draw() {
         ctx.restore();
         updateUI(me);
         drawMinimap(me);
-        if(eatEffect > 0) eatEffect *= 0.9; // Yeme efekti sönümü
+        if(eatEffect > 0) eatEffect *= 0.9;
     }
     requestAnimationFrame(draw);
 }
@@ -120,13 +148,11 @@ function drawJellyPlayer(p, isMe) {
     
     for (let i = 0; i < points; i++) {
         let a = (i / points) * Math.PI * 2;
-        // Temel jel hareketi + yeme titremesi
         let w = Math.sin(time + i * 1.2) * (p.radius * (0.04 + eatEffect * 0.005));
         let s = (Math.abs(p.targetX) > 5 || Math.abs(p.targetY) > 5) ? Math.cos(a - moveAngle) * (p.radius * (p.isBoosting ? 0.3 : 0.18)) : 0;
         
         let press = 0;
         const margin = 15;
-        // Duvara yapışma fiziği (Yassılaşma)
         if (p.x < p.radius + margin) press += Math.max(0, (p.radius + margin - p.x) * -Math.cos(a));
         if (mapSize - p.x < p.radius + margin) press += Math.max(0, (p.radius + margin - (mapSize - p.x)) * Math.cos(a));
         if (p.y < p.radius + margin) press += Math.max(0, (p.radius + margin - p.y) * -Math.sin(a));
@@ -145,7 +171,6 @@ function drawJellyPlayer(p, isMe) {
     ctx.closePath(); ctx.fillStyle = p.color; ctx.fill(); 
     ctx.strokeStyle = p.isBoosting ? '#fff' : 'rgba(255,255,255,0.7)'; ctx.lineWidth = p.isBoosting ? 8 : 4; ctx.stroke();
     
-    // Gözler
     ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(moveAngle);
     ctx.fillStyle="white"; ctx.beginPath(); 
     ctx.arc(p.radius * 0.35, -p.radius * 0.2, p.radius * 0.2, 0, Math.PI * 2); 
