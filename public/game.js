@@ -2,10 +2,13 @@ const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 const mCanvas = document.getElementById('minimap-canvas');
 const mCtx = mCanvas.getContext('2d');
+const pingEl = document.getElementById('ping-display');
 const socket = io();
 
 let allPlayers = {}, allFoods = [], viruses = [], ejectedMasses = [], mapSize = 15000;
 let isAlive = false, controlType = "mouse", globalData = {}, boostCharge = 100;
+let lastPingTime = 0, currentPing = 0;
+
 const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
 
 function resize() {
@@ -13,11 +16,19 @@ function resize() {
 }
 window.addEventListener('resize', resize); resize();
 
-function enterFullScreen() {
-    const el = document.documentElement;
-    if (el.requestFullscreen) el.requestFullscreen().catch(() => {});
-    else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
-}
+// Ping Ölçümü
+setInterval(() => {
+    if(socket.connected) {
+        lastPingTime = Date.now();
+        socket.emit('heartbeat', lastPingTime);
+    }
+}, 2000);
+
+socket.on('heartbeat_res', (sentTime) => {
+    currentPing = Date.now() - sentTime;
+    pingEl.innerText = `Ping: ${currentPing} ms`;
+    pingEl.style.color = currentPing < 100 ? "#00ff00" : (currentPing < 200 ? "#ffff00" : "#ff0000");
+});
 
 socket.on('initGameData', (data) => { allFoods = data.foods; viruses = data.viruses; });
 socket.on('updateViruses', (v) => viruses = v);
@@ -37,7 +48,6 @@ function renderScores(t) {
 }
 
 document.getElementById('btn-play').onclick = () => {
-    enterFullScreen();
     const name = document.getElementById('username').value;
     const selected = document.getElementById('control-type').value;
     controlType = (selected === "auto") ? (isMobile ? "joystick" : "mouse") : selected;
@@ -48,24 +58,17 @@ document.getElementById('btn-play').onclick = () => {
             .on('move', (e, d) => socket.emit('playerMove', { x: d.vector.x*100, y: -d.vector.y*100 }))
             .on('end', () => socket.emit('playerMove', { x: 0, y: 0 }));
     }
-    if (isMobile) {
-        document.getElementById('btn-boost-mob').style.display = 'flex';
-        document.getElementById('btn-eject-mob').style.display = 'flex';
-    }
 
     socket.emit('joinGame', name);
     document.getElementById('menu-overlay').style.display = 'none';
     document.getElementById('leaderboard').style.display = 'block';
     document.getElementById('minimap').style.display = 'block';
-    document.getElementById('boost-container').style.display = 'block';
     isAlive = true;
 };
 
 window.addEventListener('mousemove', (e) => {
     if (isAlive && controlType === "mouse") {
-        const centerX = window.innerWidth / 2;
-        const centerY = window.innerHeight / 2;
-        socket.emit('playerMove', { x: e.clientX - centerX, y: e.clientY - centerY });
+        socket.emit('playerMove', { x: e.clientX - window.innerWidth / 2, y: e.clientY - window.innerHeight / 2 });
     }
 });
 
@@ -75,10 +78,6 @@ window.addEventListener('mousedown', (e) => {
     if(e.button === 2) socket.emit('triggerBoost');
 });
 
-document.getElementById('btn-boost-mob').ontouchstart = (e) => { e.preventDefault(); socket.emit('triggerBoost'); };
-document.getElementById('btn-eject-mob').ontouchstart = (e) => { e.preventDefault(); socket.emit('ejectMass'); };
-
-socket.on('boostActivated', () => { boostCharge = 0; });
 socket.on('dead', (d) => { 
     isAlive = false; 
     document.getElementById('final-score').innerText = `Skor: ${Math.floor(d.score)}`; 
@@ -87,31 +86,27 @@ socket.on('dead', (d) => {
 
 function draw() {
     const me = allPlayers[socket.id];
-    ctx.fillStyle = '#0a0a0a'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#050505'; ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     if (me && isAlive) {
-        if (boostCharge < 100) boostCharge += (100 / (15 * 60));
-        document.getElementById('boost-bar').style.width = boostCharge + "%";
-        document.getElementById('boost-bar').style.background = boostCharge >= 100 ? "#ffeb3b" : "white";
-
         let zoom = Math.pow(isMobile ? 24 : 30, 0.45) / Math.pow(me.radius, 0.45);
-        if (zoom < (isMobile ? 0.22 : 0.32)) zoom = isMobile ? 0.22 : 0.32;
+        if (zoom < 0.25) zoom = 0.25;
 
         ctx.save();
         ctx.translate(canvas.width/2, canvas.height/2);
         ctx.scale(zoom, zoom);
         ctx.translate(-me.x, -me.y);
 
-        // Izgara çizimi
-        ctx.strokeStyle = '#181818'; ctx.lineWidth = 2;
+        // Izgara
+        ctx.strokeStyle = '#151515'; ctx.lineWidth = 4;
         ctx.beginPath();
         for(let x=0; x<=mapSize; x+=500) { ctx.moveTo(x,0); ctx.lineTo(x,mapSize); }
         for(let y=0; y<=mapSize; y+=500) { ctx.moveTo(0,y); ctx.lineTo(mapSize,y); }
         ctx.stroke();
-        ctx.strokeStyle = '#f33'; ctx.lineWidth = 15; ctx.strokeRect(0,0,mapSize,mapSize);
+        ctx.strokeStyle = '#ff3333'; ctx.lineWidth = 20; ctx.strokeRect(0,0,mapSize,mapSize);
 
         for(let f of allFoods) {
-            if (Math.abs(me.x - f.x) < 2000 && Math.abs(me.y - f.y) < 2000) {
+            if (Math.abs(me.x - f.x) < 2500 && Math.abs(me.y - f.y) < 2500) {
                 ctx.fillStyle = f.c; ctx.beginPath(); ctx.arc(f.x, f.y, f.r, 0, Math.PI*2); ctx.fill();
             }
         }
@@ -130,7 +125,7 @@ function draw() {
 }
 
 function drawVirus(x, y, r) {
-    ctx.save(); ctx.translate(x, y); ctx.beginPath(); ctx.fillStyle = '#ff0000'; ctx.strokeStyle = '#800000'; ctx.lineWidth = 4;
+    ctx.save(); ctx.translate(x, y); ctx.beginPath(); ctx.fillStyle = '#ff0000'; ctx.strokeStyle = '#800000'; ctx.lineWidth = 5;
     for (let i = 0; i < 40; i++) {
         let a = (i / 20) * Math.PI; let d = i % 2 === 0 ? r : r * 0.85;
         ctx.lineTo(Math.cos(a) * d, Math.sin(a) * d);
@@ -145,12 +140,7 @@ function drawJellyPlayer(p, isMe) {
         let a = (i / points) * Math.PI * 2;
         let w = Math.sin(time + i * 1.2) * (p.radius * 0.04);
         let s = (Math.abs(p.targetX) > 5 || Math.abs(p.targetY) > 5) ? Math.cos(a - moveAngle) * (p.radius * (p.isBoosting ? 0.3 : 0.18)) : 0;
-        let press = 0;
-        if (p.x < p.radius + 15) press += Math.max(0, (p.radius + 15 - p.x) * -Math.cos(a));
-        if (mapSize - p.x < p.radius + 15) press += Math.max(0, (p.radius + 10 - (mapSize - p.x)) * Math.cos(a));
-        if (p.y < p.radius + 15) press += Math.max(0, (p.radius + 15 - p.y) * -Math.sin(a));
-        if (mapSize - p.y < p.radius + 15) press += Math.max(0, (p.radius + 15 - (mapSize - p.y)) * Math.sin(a));
-        let r = p.radius + w + s - press;
+        let r = p.radius + w + s;
         vertices.push({ x: p.x + Math.cos(a) * r, y: p.y + Math.sin(a) * r });
     }
     ctx.beginPath(); ctx.moveTo((vertices[0].x + vertices[points-1].x) / 2, (vertices[0].y + vertices[points-1].y) / 2);
@@ -158,7 +148,8 @@ function drawJellyPlayer(p, isMe) {
         const n = vertices[(i + 1) % points];
         ctx.quadraticCurveTo(vertices[i].x, vertices[i].y, (vertices[i].x + n.x) / 2, (vertices[i].y + n.y) / 2);
     }
-    ctx.closePath(); ctx.fillStyle = p.color; ctx.fill(); ctx.strokeStyle = p.isBoosting ? 'yellow' : 'white'; ctx.lineWidth = p.isBoosting ? 6 : 4; ctx.stroke();
+    ctx.closePath(); ctx.fillStyle = p.color; ctx.fill(); 
+    ctx.strokeStyle = p.isBoosting ? '#fff' : 'rgba(255,255,255,0.8)'; ctx.lineWidth = p.isBoosting ? 8 : 4; ctx.stroke();
     
     // Gözler
     ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(moveAngle);
@@ -167,12 +158,15 @@ function drawJellyPlayer(p, isMe) {
     ctx.arc(p.radius * 0.35, p.radius * 0.2, p.radius * 0.2, 0, Math.PI * 2); 
     ctx.fill();
     ctx.fillStyle="black"; ctx.beginPath(); 
-    ctx.arc(p.radius * 0.35 + 3, -p.radius * 0.2, p.radius * 0.1, 0, Math.PI * 2); 
-    ctx.arc(p.radius * 0.35 + 3, p.radius * 0.2, p.radius * 0.1, 0, Math.PI * 2); 
+    ctx.arc(p.radius * 0.35 + 4, -p.radius * 0.2, p.radius * 0.1, 0, Math.PI * 2); 
+    ctx.arc(p.radius * 0.35 + 4, p.radius * 0.2, p.radius * 0.1, 0, Math.PI * 2); 
     ctx.fill();
     ctx.restore();
     
-    ctx.fillStyle = "white"; ctx.font = "bold 14px Arial"; ctx.textAlign = "center"; ctx.fillText(p.name, p.x, p.y - p.radius - 18);
+    ctx.fillStyle = "white"; ctx.font = "bold 16px Arial"; ctx.textAlign = "center"; 
+    ctx.shadowBlur = 4; ctx.shadowColor = "black";
+    ctx.fillText(p.name, p.x, p.y - p.radius - 20);
+    ctx.shadowBlur = 0;
 }
 
 function updateUI(me) {
@@ -183,12 +177,13 @@ function updateUI(me) {
 }
 
 function drawMinimap(me) {
-    mCtx.clearRect(0,0,125,125); 
-    const s = 125 / mapSize; 
+    mCtx.clearRect(0,0,130,130); 
+    const s = 130 / mapSize; 
     for(let id in allPlayers) {
         const p = allPlayers[id]; 
-        mCtx.fillStyle = id === socket.id ? "#fff" : "#f44";
-        let dotR = id === socket.id ? 4 : 2; 
+        mCtx.fillStyle = id === socket.id ? "#fff" : "#ff4444";
+        // Büyüklük eş zamanlı gösteriliyor
+        let dotR = Math.max(2.5, p.radius * s * 5); 
         mCtx.beginPath(); mCtx.arc(p.x * s, p.y * s, dotR, 0, Math.PI*2); mCtx.fill();
     }
 }
