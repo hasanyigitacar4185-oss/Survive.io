@@ -14,24 +14,10 @@ const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
 
 function resize() { 
     canvas.width = window.innerWidth; canvas.height = window.innerHeight; 
-    if(isMobile) checkOrientation();
+    if(isMobile && window.innerHeight > window.innerWidth) document.getElementById('orientation-warning').style.display = 'flex';
+    else document.getElementById('orientation-warning').style.display = 'none';
 }
 window.addEventListener('resize', resize); resize();
-
-function checkOrientation() {
-    const warning = document.getElementById('orientation-warning');
-    if(window.innerHeight > window.innerWidth) { warning.style.display = 'flex'; }
-    else { warning.style.display = 'none'; }
-}
-
-function enterFullScreen() {
-    const el = document.documentElement;
-    if (el.requestFullscreen) el.requestFullscreen().catch(() => {});
-    else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
-    if(screen.orientation && screen.orientation.lock) {
-        screen.orientation.lock('landscape').catch(() => {});
-    }
-}
 
 setInterval(() => { if(socket.connected) { lastPingTime = Date.now(); socket.emit('heartbeat', lastPingTime); } }, 2000);
 socket.on('heartbeat_res', (t) => {
@@ -41,30 +27,30 @@ socket.on('heartbeat_res', (t) => {
 
 socket.on('initGameData', (data) => { allFoods = data.foods; viruses = data.viruses; });
 socket.on('updateViruses', (v) => viruses = v);
-socket.on('foodCollected', (data) => { 
-    if(allFoods[data.i]) { allFoods[data.i] = data.newF; eatEffect = 15; }
+socket.on('foodCollected', (data) => { if(allFoods[data.i]) { allFoods[data.i] = data.newF; if(isAlive) eatEffect = 15; } });
+
+socket.on('updateState', (data) => { 
+    // Gelen botları ve oyuncuları tek bir objede birleştir
+    allPlayers = { ...data.players, ...data.bots }; 
+    ejectedMasses = data.ejectedMasses; 
 });
-socket.on('updateState', (data) => { allPlayers = data.players; ejectedMasses = data.ejectedMasses; });
+
 socket.on('globalScoresUpdate', (data) => { globalData = data; });
 
 document.getElementById('btn-play').onclick = () => {
-    if(isMobile) enterFullScreen();
     const name = document.getElementById('username').value;
     const selected = document.getElementById('control-type').value;
     controlType = (selected === "auto") ? (isMobile ? "joystick" : "mouse") : selected;
-    
     if (controlType === "joystick") {
         document.getElementById('joystick-zone').style.display = 'block';
         nipplejs.create({ zone: document.getElementById('joystick-zone'), mode: 'static', position: {left:'50%', top:'50%'}, color:'white', size:100 })
             .on('move', (e, d) => socket.emit('playerMove', { x: d.vector.x*100, y: -d.vector.y*100 }))
             .on('end', () => socket.emit('playerMove', { x: 0, y: 0 }));
     }
-    
     if(isMobile) {
         document.getElementById('btn-boost-mob').style.display = 'flex';
         document.getElementById('btn-eject-mob').style.display = 'flex';
     }
-
     socket.emit('joinGame', name);
     document.getElementById('menu-overlay').style.display = 'none';
     document.getElementById('leaderboard').style.display = 'block';
@@ -83,7 +69,6 @@ window.addEventListener('mousedown', (e) => {
     if(e.button === 2) socket.emit('triggerBoost');
 });
 
-// Mobil Buton Eventleri
 document.getElementById('btn-boost-mob').ontouchstart = (e) => { e.preventDefault(); socket.emit('triggerBoost'); };
 document.getElementById('btn-eject-mob').ontouchstart = (e) => { e.preventDefault(); socket.emit('ejectMass'); };
 
@@ -107,6 +92,7 @@ function draw() {
         ctx.scale(zoom, zoom);
         ctx.translate(-me.x, -me.y);
 
+        // Izgara
         ctx.strokeStyle = '#121212'; ctx.lineWidth = 4; ctx.beginPath();
         for(let x=0; x<=mapSize; x+=500) { ctx.moveTo(x,0); ctx.lineTo(x,mapSize); }
         for(let y=0; y<=mapSize; y+=500) { ctx.moveTo(0,y); ctx.lineTo(mapSize,y); }
@@ -123,7 +109,7 @@ function draw() {
             ctx.strokeStyle = 'black'; ctx.lineWidth = 2; ctx.stroke();
         }
         for(let v of viruses) drawVirus(v.x, v.y, v.r);
-        for(let id in allPlayers) drawJellyPlayer(allPlayers[id], id === socket.id);
+        for(let id in allPlayers) drawJellyPlayer(allPlayers[id]);
         
         ctx.restore();
         updateUI(me);
@@ -142,22 +128,19 @@ function drawVirus(x, y, r) {
     ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore();
 }
 
-function drawJellyPlayer(p, isMe) {
+function drawJellyPlayer(p) {
     const points = 32, time = Date.now() * 0.006, vertices = [];
     const moveAngle = Math.atan2(p.targetY, p.targetX);
     
     for (let i = 0; i < points; i++) {
         let a = (i / points) * Math.PI * 2;
-        let w = Math.sin(time + i * 1.2) * (p.radius * (0.04 + eatEffect * 0.005));
+        let w = Math.sin(time + i * 1.2) * (p.radius * (0.04 + (p.id === socket.id ? eatEffect * 0.005 : 0)));
         let s = (Math.abs(p.targetX) > 5 || Math.abs(p.targetY) > 5) ? Math.cos(a - moveAngle) * (p.radius * (p.isBoosting ? 0.3 : 0.18)) : 0;
-        
         let press = 0;
-        const margin = 15;
-        if (p.x < p.radius + margin) press += Math.max(0, (p.radius + margin - p.x) * -Math.cos(a));
-        if (mapSize - p.x < p.radius + margin) press += Math.max(0, (p.radius + margin - (mapSize - p.x)) * Math.cos(a));
-        if (p.y < p.radius + margin) press += Math.max(0, (p.radius + margin - p.y) * -Math.sin(a));
-        if (mapSize - p.y < p.radius + margin) press += Math.max(0, (p.radius + margin - (mapSize - p.y)) * Math.sin(a));
-
+        if (p.x < p.radius + 15) press += Math.max(0, (p.radius + 15 - p.x) * -Math.cos(a));
+        if (mapSize - p.x < p.radius + 15) press += Math.max(0, (p.radius + 15 - (mapSize - p.x)) * Math.cos(a));
+        if (p.y < p.radius + 15) press += Math.max(0, (p.radius + 15 - p.y) * -Math.sin(a));
+        if (mapSize - p.y < p.radius + 15) press += Math.max(0, (p.radius + 15 - (mapSize - p.y)) * Math.sin(a));
         let r = p.radius + w + s - press;
         vertices.push({ x: p.x + Math.cos(a) * r, y: p.y + Math.sin(a) * r });
     }
@@ -172,16 +155,10 @@ function drawJellyPlayer(p, isMe) {
     ctx.strokeStyle = p.isBoosting ? '#fff' : 'rgba(255,255,255,0.7)'; ctx.lineWidth = p.isBoosting ? 8 : 4; ctx.stroke();
     
     ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(moveAngle);
-    ctx.fillStyle="white"; ctx.beginPath(); 
-    ctx.arc(p.radius * 0.35, -p.radius * 0.2, p.radius * 0.2, 0, Math.PI * 2); 
-    ctx.arc(p.radius * 0.35, p.radius * 0.2, p.radius * 0.2, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle="black"; ctx.beginPath(); 
-    ctx.arc(p.radius * 0.35 + 4, -p.radius * 0.2, p.radius * 0.1, 0, Math.PI * 2); 
-    ctx.arc(p.radius * 0.35 + 4, p.radius * 0.2, p.radius * 0.1, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle="white"; ctx.beginPath(); ctx.arc(p.radius*0.35, -p.radius*0.2, p.radius*0.2, 0, 7); ctx.arc(p.radius*0.35, p.radius*0.2, p.radius*0.2, 0, 7); ctx.fill();
+    ctx.fillStyle="black"; ctx.beginPath(); ctx.arc(p.radius*0.35+4, -p.radius*0.2, p.radius*0.1, 0, 7); ctx.arc(p.radius*0.35+4, p.radius*0.2, p.radius*0.1, 0, 7); ctx.fill();
     ctx.restore();
-    
-    ctx.fillStyle = "white"; ctx.font = "bold 16px Arial"; ctx.textAlign = "center"; 
-    ctx.fillText(p.name, p.x, p.y - p.radius - 20);
+    ctx.fillStyle = "white"; ctx.font = "bold 16px Arial"; ctx.textAlign = "center"; ctx.fillText(p.name, p.x, p.y - p.radius - 20);
 }
 
 function updateUI(me) {
@@ -192,10 +169,14 @@ function updateUI(me) {
 }
 
 function drawMinimap(me) {
-    mCtx.clearRect(0,0,130,130); const s = 130 / mapSize; 
+    mCtx.clearRect(0,0,130,130); 
+    const s = 130 / mapSize; 
     for(let id in allPlayers) {
-        const p = allPlayers[id]; mCtx.fillStyle = id === socket.id ? "#fff" : "#ff4444";
-        let dotR = Math.max(2.5, p.radius * s * 5); 
+        const p = allPlayers[id]; 
+        mCtx.fillStyle = id === socket.id ? "#fff" : (p.isBot ? "#ff9800" : "#ff4444");
+        // Minimap Düzeltmesi: Gerçek ölçekli çizim
+        let dotR = p.radius * s; 
+        if(dotR < 2) dotR = 2; // Çok küçükse görünür kıl
         mCtx.beginPath(); mCtx.arc(p.x * s, p.y * s, dotR, 0, Math.PI*2); mCtx.fill();
     }
 }
