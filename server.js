@@ -27,13 +27,9 @@ const EAT_MARGIN = 5;
 const EJECT_COST = 30; 
 const EJECT_THRESHOLD = 200;
 
-let players = {};
-let foods = [];
-let viruses = [];
-let ejectedMasses = [];
-
+// Büyüme hızı 4 kat artırıldı (Sqrt katsayısı 1.5 -> 6.0)
 function calculateRadius(score) {
-    return INITIAL_RADIUS + Math.sqrt(score) * 1.5;
+    return INITIAL_RADIUS + Math.sqrt(score) * 6.0;
 }
 
 function getSafeSpawn() {
@@ -157,7 +153,7 @@ setInterval(() => {
         });
 
         viruses.forEach((v, idx) => {
-            if (Math.hypot(p.x - v.x, p.y - v.y) < p.radius + 15 && p.score > 1000) { // Sınır 1000 yapıldı
+            if (Math.hypot(p.x - v.x, p.y - v.y) < p.radius + 15 && p.score > 250) { // Sınır 250 yapıldı
                 p.score *= 0.9;
                 p.radius = calculateRadius(p.score);
                 viruses.splice(idx, 1);
