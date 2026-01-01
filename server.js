@@ -46,7 +46,13 @@ function getSafeSpawn() {
 }
 
 function spawnFood(index) {
-    const f = { i: index, x: Math.floor(Math.random() * MAP_SIZE), y: Math.floor(Math.random() * MAP_SIZE), c: `hsl(${Math.random() * 360}, 70%, 50%)`, r: 7 };
+    const f = { 
+        i: index, 
+        x: Math.floor(Math.random() * MAP_SIZE), 
+        y: Math.floor(Math.random() * MAP_SIZE), 
+        c: `hsl(${Math.random() * 360}, 70%, 50%)`, 
+        r: 7 
+    };
     if (index !== undefined) foods[index] = f;
     return f;
 }
@@ -110,7 +116,7 @@ io.on('connection', async (socket) => {
 });
 
 setInterval(() => {
-    ejectedMasses.forEach((m) => {
+    ejectedMasses.forEach((m, idx) => {
         if (m.speed > 0) { m.x += Math.cos(m.angle)*m.speed; m.y += Math.sin(m.angle)*m.speed; m.speed *= 0.92; if(m.speed < 1) m.speed = 0; }
         m.x = Math.max(20, Math.min(MAP_SIZE-20, m.x)); m.y = Math.max(20, Math.min(MAP_SIZE-20, m.y));
     });
