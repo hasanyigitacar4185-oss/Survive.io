@@ -20,8 +20,8 @@ const HighScore = mongoose.model('HighScore', new mongoose.Schema({
 
 // --- AYARLAR ---
 const MAP_SIZE = 15000; 
-const FOOD_COUNT = 3000; // 3 katına çıkarıldı
-const VIRUS_COUNT = 30;  // 30 adet yapıldı
+const FOOD_COUNT = 3000; 
+const VIRUS_COUNT = 30;  
 const INITIAL_RADIUS = 30;
 const EAT_MARGIN = 5;
 const EJECT_COST = 30; 
@@ -37,9 +37,7 @@ function calculateRadius(score) {
 }
 
 function getSafeSpawn() {
-    let x = Math.random() * (MAP_SIZE - 1000) + 500;
-    let y = Math.random() * (MAP_SIZE - 1000) + 500;
-    return { x, y };
+    return { x: Math.random() * (MAP_SIZE - 1000) + 500, y: Math.random() * (MAP_SIZE - 1000) + 500 };
 }
 
 function spawnFood(index) {
@@ -76,8 +74,6 @@ async function getScores() {
 
 io.on('connection', async (socket) => {
     socket.emit('globalScoresUpdate', await getScores());
-
-    // Ping Mekanizması
     socket.on('heartbeat', (t) => { socket.emit('heartbeat_res', t); });
 
     socket.on('joinGame', (username) => {
@@ -161,16 +157,12 @@ setInterval(() => {
         });
 
         viruses.forEach((v, idx) => {
-            if (Math.hypot(p.x - v.x, p.y - v.y) < p.radius + 15 && p.score > 300) {
-                p.score *= 0.9; // %10 Hasar
+            if (Math.hypot(p.x - v.x, p.y - v.y) < p.radius + 15 && p.score > 1000) { // Sınır 1000 yapıldı
+                p.score *= 0.9;
                 p.radius = calculateRadius(p.score);
-                // Virüsü kaldır ve 30 saniye sonra rastgele yerde doğur
                 viruses.splice(idx, 1);
                 io.emit('updateViruses', viruses);
-                setTimeout(() => {
-                    viruses.push(spawnVirus());
-                    io.emit('updateViruses', viruses);
-                }, 30000);
+                setTimeout(() => { viruses.push(spawnVirus()); io.emit('updateViruses', viruses); }, 30000);
             }
         });
 
