@@ -73,14 +73,13 @@ function draw() {
         ctx.scale(zoom, zoom);
         ctx.translate(-me.x, -me.y);
 
-        // Grid
         ctx.strokeStyle = '#181818'; ctx.lineWidth = 4; ctx.beginPath();
         for(let x=0; x<=mapSize; x+=1000) { ctx.moveTo(x,0); ctx.lineTo(x,mapSize); }
         for(let y=0; y<=mapSize; y+=1000) { ctx.moveTo(0,y); ctx.lineTo(mapSize,y); }
         ctx.stroke();
         ctx.strokeStyle = '#f33'; ctx.lineWidth = 30; ctx.strokeRect(0,0,mapSize,mapSize);
 
-        for(let f of allFoods) if (Math.abs(me.x-f.x)<2000 && Math.abs(me.y-f.y)<1500) { ctx.fillStyle=f.c; ctx.beginPath(); ctx.arc(f.x,f.y,f.r,0,Math.PI*2); ctx.fill(); }
+        for(let f of allFoods) if (Math.abs(me.x-f.x)<2500 && Math.abs(me.y-f.y)<1500) { ctx.fillStyle=f.c; ctx.beginPath(); ctx.arc(f.x,f.y,f.r,0,Math.PI*2); ctx.fill(); }
         for(let m of ejectedMasses) { ctx.fillStyle=m.c; ctx.beginPath(); ctx.arc(m.x,m.y,m.r,0,Math.PI*2); ctx.fill(); ctx.strokeStyle='black'; ctx.lineWidth=2; ctx.stroke(); }
         for(let v of viruses) drawVirus(v.x, v.y, v.r);
         for(let id in allEntities) drawJellyPlayer(allEntities[id], id === socket.id);
