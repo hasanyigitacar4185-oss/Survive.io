@@ -4,7 +4,7 @@ const mCanvas = document.getElementById('minimap-canvas');
 const mCtx = mCanvas.getContext('2d');
 const socket = io();
 
-let allPlayers = {}, allFoods = [], viruses = [], ejectedMasses = [], mapSize = 5000;
+let allPlayers = {}, allFoods = [], viruses = [], ejectedMasses = [], mapSize = 15000;
 let isAlive = false, controlType = "mouse", globalData = {}, boostCharge = 100;
 const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
 
@@ -21,11 +21,15 @@ function enterFullScreen() {
 
 socket.on('initGameData', (data) => { allFoods = data.foods; viruses = data.viruses; });
 socket.on('updateViruses', (v) => viruses = v);
-socket.on('foodCollected', (data) => allFoods[data.i] = data.newF);
+socket.on('foodCollected', (data) => { if(allFoods[data.i]) allFoods[data.i] = data.newF; });
 socket.on('updateState', (data) => { allPlayers = data.players; ejectedMasses = data.ejectedMasses; });
 socket.on('globalScoresUpdate', (data) => { globalData = data; renderScores('daily'); });
 
-function changeTab(t, b) { document.querySelectorAll('.tab-btn').forEach(x=>x.classList.remove('active')); b.classList.add('active'); renderScores(t); }
+function changeTab(t, b) { 
+    document.querySelectorAll('.tab-btn').forEach(x=>x.classList.remove('active')); 
+    b.classList.add('active'); renderScores(t); 
+}
+
 function renderScores(t) {
     const list = document.getElementById('global-list');
     const data = globalData[t] || [];
@@ -75,7 +79,11 @@ document.getElementById('btn-boost-mob').ontouchstart = (e) => { e.preventDefaul
 document.getElementById('btn-eject-mob').ontouchstart = (e) => { e.preventDefault(); socket.emit('ejectMass'); };
 
 socket.on('boostActivated', () => { boostCharge = 0; });
-socket.on('dead', (d) => { isAlive = false; document.getElementById('final-score').innerText = `Skor: ${Math.floor(d.score)}`; document.getElementById('death-overlay').style.display = 'flex'; });
+socket.on('dead', (d) => { 
+    isAlive = false; 
+    document.getElementById('final-score').innerText = `Skor: ${Math.floor(d.score)}`; 
+    document.getElementById('death-overlay').style.display = 'flex'; 
+});
 
 function draw() {
     const me = allPlayers[socket.id];
@@ -94,6 +102,7 @@ function draw() {
         ctx.scale(zoom, zoom);
         ctx.translate(-me.x, -me.y);
 
+        // Izgara çizimi
         ctx.strokeStyle = '#181818'; ctx.lineWidth = 2;
         ctx.beginPath();
         for(let x=0; x<=mapSize; x+=500) { ctx.moveTo(x,0); ctx.lineTo(x,mapSize); }
@@ -102,7 +111,7 @@ function draw() {
         ctx.strokeStyle = '#f33'; ctx.lineWidth = 15; ctx.strokeRect(0,0,mapSize,mapSize);
 
         for(let f of allFoods) {
-            if (Math.abs(me.x - f.x) < 1500 && Math.abs(me.y - f.y) < 1500) {
+            if (Math.abs(me.x - f.x) < 2000 && Math.abs(me.y - f.y) < 2000) {
                 ctx.fillStyle = f.c; ctx.beginPath(); ctx.arc(f.x, f.y, f.r, 0, Math.PI*2); ctx.fill();
             }
         }
@@ -151,6 +160,7 @@ function drawJellyPlayer(p, isMe) {
     }
     ctx.closePath(); ctx.fillStyle = p.color; ctx.fill(); ctx.strokeStyle = p.isBoosting ? 'yellow' : 'white'; ctx.lineWidth = p.isBoosting ? 6 : 4; ctx.stroke();
     
+    // Gözler
     ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(moveAngle);
     ctx.fillStyle="white"; ctx.beginPath(); 
     ctx.arc(p.radius * 0.35, -p.radius * 0.2, p.radius * 0.2, 0, Math.PI * 2); 
@@ -168,14 +178,17 @@ function drawJellyPlayer(p, isMe) {
 function updateUI(me) {
     let sorted = Object.values(allPlayers).sort((a,b) => b.score - a.score);
     document.getElementById('lb-list').innerHTML = sorted.slice(0, 5).map((p, i) => `<div class="lb-item"><span>${i+1}. ${p.name}</span><span>${Math.floor(p.score)}</span></div>`).join('');
-    document.getElementById('lb-player').innerHTML = `<div class="lb-item lb-own"><span>${sorted.findIndex(p => p.id === socket.id)+1}. ${me.name}</span><span>${Math.floor(me.score)}</span></div>`;
+    const myPos = sorted.findIndex(p => p.id === socket.id) + 1;
+    document.getElementById('lb-player').innerHTML = `<div class="lb-item lb-own"><span>${myPos}. ${me.name}</span><span>${Math.floor(me.score)}</span></div>`;
 }
 
 function drawMinimap(me) {
-    mCtx.clearRect(0,0,125,125); const s = 125 / mapSize;
+    mCtx.clearRect(0,0,125,125); 
+    const s = 125 / mapSize; 
     for(let id in allPlayers) {
-        const p = allPlayers[id]; mCtx.fillStyle = id === socket.id ? "#fff" : "#f44";
-        let dotR = Math.max(2, p.radius * 0.05);
+        const p = allPlayers[id]; 
+        mCtx.fillStyle = id === socket.id ? "#fff" : "#f44";
+        let dotR = id === socket.id ? 4 : 2; 
         mCtx.beginPath(); mCtx.arc(p.x * s, p.y * s, dotR, 0, Math.PI*2); mCtx.fill();
     }
 }
