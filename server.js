@@ -27,7 +27,13 @@ const EAT_MARGIN = 5;
 const EJECT_COST = 30; 
 const EJECT_THRESHOLD = 200;
 
-// Büyüme hızı 4 kat artırıldı (Sqrt katsayısı 1.5 -> 6.0)
+// --- DEĞİŞKEN TANIMLAMALARI (HATA BURADAN KAYNAKLIYDI) ---
+let players = {};
+let foods = [];
+let viruses = [];
+let ejectedMasses = [];
+
+// Büyüme hızı fonksiyonu
 function calculateRadius(score) {
     return INITIAL_RADIUS + Math.sqrt(score) * 6.0;
 }
@@ -36,6 +42,7 @@ function getSafeSpawn() {
     return { x: Math.random() * (MAP_SIZE - 1000) + 500, y: Math.random() * (MAP_SIZE - 1000) + 500 };
 }
 
+// Yemek oluşturma fonksiyonu
 function spawnFood(index) {
     const f = { 
         i: index, 
@@ -47,12 +54,18 @@ function spawnFood(index) {
     if (index !== undefined) foods[index] = f;
     return f;
 }
-for (let i = 0; i < FOOD_COUNT; i++) foods.push(spawnFood(i));
+
+// Başlangıç yemeklerini doldur
+for (let i = 0; i < FOOD_COUNT; i++) {
+    foods.push(spawnFood(i));
+}
 
 function spawnVirus() { 
     return { x: Math.random() * (MAP_SIZE - 1000) + 500, y: Math.random() * (MAP_SIZE - 1000) + 500, r: 90 }; 
 }
-for (let i = 0; i < VIRUS_COUNT; i++) viruses.push(spawnVirus());
+for (let i = 0; i < VIRUS_COUNT; i++) {
+    viruses.push(spawnVirus());
+}
 
 async function getScores() {
     const trOffset = 3 * 60 * 60 * 1000;
@@ -153,7 +166,7 @@ setInterval(() => {
         });
 
         viruses.forEach((v, idx) => {
-            if (Math.hypot(p.x - v.x, p.y - v.y) < p.radius + 15 && p.score > 250) { // Sınır 250 yapıldı
+            if (Math.hypot(p.x - v.x, p.y - v.y) < p.radius + 15 && p.score > 250) {
                 p.score *= 0.9;
                 p.radius = calculateRadius(p.score);
                 viruses.splice(idx, 1);
