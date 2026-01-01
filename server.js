@@ -28,14 +28,14 @@ const EJECT_COST = 30;
 const EJECT_THRESHOLD = 200;
 const BOT_COUNT = 10;
 
-// Değişken Tanımları
+// Değişkenler
 let players = {};
 let bots = {};
 let foods = [];
 let viruses = [];
 let ejectedMasses = [];
 
-const botNames = ["Striker", "StormHunter", "ProGamer", "ShadowWalker", "NeonLight", "FastFurious", "EagleEye", "AlphaOne", "Viper", "GhostPlayer", "BulletProof", "SilentKiller", "Warrior", "Nova", "Titan"];
+const botNames = ["Striker", "Storm", "Shadow", "Neon", "Alpha", "Viper", "Ghost", "Bullet", "Warrior", "Nova", "Titan", "Hunter", "Vortex", "Rex", "Ace"];
 
 function calculateRadius(score) {
     return INITIAL_RADIUS + Math.sqrt(score) * 6.0;
@@ -51,13 +51,15 @@ for (let i = 0; i < FOOD_COUNT; i++) foods.push(spawnFood(i));
 function spawnVirus() { return { x: Math.random() * (MAP_SIZE - 1000) + 500, y: Math.random() * (MAP_SIZE - 1000) + 500, r: 90 }; }
 for (let i = 0; i < VIRUS_COUNT; i++) viruses.push(spawnVirus());
 
-// --- BOT YÖNETİMİ ---
+// Bot Yönetimi
 function createBot(id) {
     const startScore = Math.floor(Math.random() * 2500);
-    let name = botNames[Math.floor(Math.random() * botNames.length)] + "_" + Math.floor(Math.random()*99);
+    let name = botNames[Math.floor(Math.random() * botNames.length)];
     bots[id] = {
-        id: id, isBot: true, name: name, x: Math.random() * MAP_SIZE, y: Math.random() * MAP_SIZE,
-        color: `hsl(${Math.random() * 360}, 60%, 50%)`, score: startScore, radius: calculateRadius(startScore),
+        id: id, isBot: true, name: name.substring(0, 8), // İsmi baştan kısıtla
+        x: Math.random() * MAP_SIZE, y: Math.random() * MAP_SIZE,
+        color: `hsl(${Math.random() * 360}, 60%, 50%)`,
+        score: startScore, radius: calculateRadius(startScore),
         angle: Math.random() * Math.PI * 2, nextScoreTime: Date.now() + Math.random() * 2000,
         thinkTimer: 0
     };
@@ -73,7 +75,10 @@ function checkBots() {
 async function getScores() {
     try {
         const today = new Date(); today.setHours(0,0,0,0);
-        return { daily: await HighScore.find({ date: { $gte: today } }).sort({ score: -1 }).limit(10), allTime: await HighScore.find().sort({ score: -1 }).limit(10) };
+        return {
+            daily: await HighScore.find({ date: { $gte: today } }).sort({ score: -1 }).limit(10),
+            allTime: await HighScore.find().sort({ score: -1 }).limit(10)
+        };
     } catch (e) { return { daily: [], allTime: [] }; }
 }
 
@@ -82,9 +87,11 @@ io.on('connection', async (socket) => {
     socket.on('heartbeat', (t) => { socket.emit('heartbeat_res', t); });
 
     socket.on('joinGame', (username) => {
+        let cleanName = (username || "Guest").substring(0, 8);
         players[socket.id] = {
-            id: socket.id, name: username || "Guest", x: Math.random() * MAP_SIZE, y: Math.random() * MAP_SIZE,
-            color: `hsl(${Math.random() * 360}, 80%, 60%)`, radius: INITIAL_RADIUS, targetX: 0, targetY: 0, score: 0, lastBoost: 0, isBoosting: false
+            id: socket.id, name: cleanName, x: Math.random() * MAP_SIZE, y: Math.random() * MAP_SIZE,
+            color: `hsl(${Math.random() * 360}, 80%, 60%)`, radius: INITIAL_RADIUS,
+            targetX: 0, targetY: 0, score: 0, lastBoost: 0, isBoosting: false
         };
         socket.emit('initGameData', { foods, viruses });
         checkBots();
@@ -130,16 +137,17 @@ setInterval(() => {
     });
 
     const all = { ...players, ...bots };
+
     for (let id in all) {
         let p = all[id];
         if(p.isBot) {
-            // Pasif Büyüme
-            if(Date.now() > p.nextScoreTime) { p.score += 1; p.radius = calculateRadius(p.score); p.nextScoreTime = Date.now() + Math.random() * 2000; }
-            
-            // Optimize Bot AI (Saniyede sadece 6 kez düşünür)
+            if(Date.now() > p.nextScoreTime) {
+                p.score += 1; p.radius = calculateRadius(p.score);
+                p.nextScoreTime = Date.now() + Math.random() * 2000;
+            }
             p.thinkTimer++;
             if(p.thinkTimer > 10) {
-                let closest = null, minDist = 800;
+                let closest = null, minDist = 1000;
                 for(let oid in all) {
                     if(id === oid) continue;
                     let dist = Math.hypot(p.x - all[oid].x, p.y - all[oid].y);
@@ -155,7 +163,8 @@ setInterval(() => {
             p.x += Math.cos(p.angle) * speed; p.y += Math.sin(p.angle) * speed;
             p.targetX = Math.cos(p.angle) * 100; p.targetY = Math.sin(p.angle) * 100;
         } else {
-            let angle = Math.atan2(p.targetY, p.targetX), dist = Math.sqrt(p.targetX*p.targetX + p.targetY*p.targetY);
+            let angle = Math.atan2(p.targetY, p.targetX);
+            let dist = Math.sqrt(p.targetX * p.targetX + p.targetY * p.targetY);
             if (dist > 5) {
                 let speed = (p.isBoosting ? 18 : 6.5) * Math.pow(p.radius / INITIAL_RADIUS, -0.15);
                 p.x += Math.cos(angle) * (dist < 50 ? (speed * dist / 50) : speed);
@@ -164,7 +173,6 @@ setInterval(() => {
         }
         p.x = Math.max(0, Math.min(MAP_SIZE, p.x)); p.y = Math.max(0, Math.min(MAP_SIZE, p.y));
 
-        // Yemek (Botlar hariç)
         if(!p.isBot) {
             for(let i=0; i<foods.length; i++) {
                 let f = foods[i];
@@ -175,17 +183,16 @@ setInterval(() => {
             }
         }
 
-        // Yeme Mekaniği
         for(let oid in all) {
             if(id === oid) continue;
             let o = all[oid];
             if (o && Math.hypot(p.x - o.x, p.y - o.y) < p.radius && p.score > o.score + EAT_MARGIN) {
                 p.score += Math.floor(o.score * 0.6); p.radius = calculateRadius(p.score);
-                if(o.isBot) { createBot(oid); } else { io.to(oid).emit('dead', { score: o.score }); delete players[oid]; }
+                if(o.isBot) { createBot(oid); }
+                else { io.to(oid).emit('dead', { score: o.score }); delete players[oid]; }
             }
         }
 
-        // Virüs (Sınır 250)
         viruses.forEach((v, idx) => {
             if (Math.hypot(p.x - v.x, p.y - v.y) < p.radius + 15 && p.score > 250) {
                 p.score *= 0.9; p.radius = calculateRadius(p.score);
@@ -194,7 +201,6 @@ setInterval(() => {
             }
         });
     }
-    // Sadece gerekli veriyi gönder (Paket küçültme)
     io.emit('updateState', { players, bots, ejectedMasses });
 }, 1000 / 60);
 
