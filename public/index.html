@@ -7,21 +7,28 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/nipplejs/0.10.1/nipplejs.min.js"></script>
     <style>
         body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; touch-action: none; color: white; }
-        canvas { display: block; position: absolute; top: 0; left: 0; z-index: 1; }
+        canvas { display: block; }
         #menu-overlay, #death-overlay, #global-modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.92); display: flex; align-items: center; justify-content: center; z-index: 100; color: white !important; }
         .box { background: #151515; padding: 25px; border-radius: 15px; text-align: center; border: 2px solid #333; width: 85%; max-width: 350px; color: white !important; }
         input { padding: 12px; width: 85%; border-radius: 8px; border: none; font-size: 18px; margin-bottom: 12px; text-align: center; background: #222; color: white; }
-        button { padding: 10px 20px; font-size: 16px; cursor: pointer; background: #4CAF50; color: white !important; border: none; border-radius: 8px; font-weight: bold; margin: 4px; pointer-events: auto; }
+        button { padding: 10px 20px; font-size: 16px; cursor: pointer; background: #4CAF50; color: white !important; border: none; border-radius: 8px; font-weight: bold; margin: 4px; }
+        
         #boost-container { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); width: 140px; height: 5px; background: rgba(255,255,255,0.1); border-radius: 5px; z-index: 20; border: 1px solid rgba(255,255,255,0.2); display: none; }
         #boost-bar { width: 0%; height: 100%; background: white; }
+
         #leaderboard { position: fixed; top: 10px; right: 10px; background: rgba(0,0,0,0.6); padding: 8px; border-radius: 8px; width: 140px; font-size: 12px; z-index: 10; border: 1px solid rgba(255,255,255,0.1); color: white !important; }
         .lb-item { display: flex; justify-content: space-between; margin-bottom: 2px; color: white !important; }
+        .lb-item span { color: white !important; }
         .lb-own { color: #ffeb3b !important; font-weight: bold; border-top: 1px solid #444; margin-top: 5px; padding-top: 5px; }
+        .lb-own span { color: #ffeb3b !important; }
+
         #minimap { position: fixed; bottom: 10px; right: 10px; width: 125px; height: 125px; background: rgba(0,0,0,0.5); border: 2px solid #444; border-radius: 5px; z-index: 10; }
-        .btn-round { position: fixed; width: 60px; height: 60px; background: rgba(255,255,255,0.1); border: 2px solid white; border-radius: 50%; z-index: 60; display: none; align-items: center; justify-content: center; font-weight: bold; font-size: 12px; color: white !important; pointer-events: auto; }
+        .btn-round { position: fixed; width: 60px; height: 60px; background: rgba(255,255,255,0.1); border: 2px solid white; border-radius: 50%; z-index: 60; display: none; align-items: center; justify-content: center; font-weight: bold; font-size: 12px; color: white !important; }
         #btn-boost-mob { bottom: 35px; right: 155px; }
         #btn-eject-mob { bottom: 105px; right: 155px; }
-        .tab-btn { background: #333; font-size: 11px; padding: 5px 10px; color: white !important; border: none; cursor: pointer; }
+
+        .tabs { display: flex; justify-content: center; margin-bottom: 10px; gap: 4px; }
+        .tab-btn { background: #333; font-size: 11px; padding: 5px 10px; color: white !important; }
         .tab-btn.active { background: #ff9800; }
         #orientation-warning { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000; z-index: 999; flex-direction: column; align-items: center; justify-content: center; text-align: center; color: white; }
     </style>
@@ -30,31 +37,32 @@
     <div id="orientation-warning"><h2>Lütfen Cihazı Yatay Döndürün</h2></div>
     <div id="menu-overlay">
         <div class="box">
-            <h1 style="color: #4CAF50;">Survive.io</h1>
+            <h1 style="color: #4CAF50; margin:0 0 15px 0;">Survive.io</h1>
             <input type="text" id="username" placeholder="İsminiz..." maxlength="10">
-            <div style="font-size:12px; color: white; margin-bottom:12px;">Kontrol: <select id="control-type" style="background:#333; color:white; padding:3px;"><option value="auto">Otomatik</option><option value="mouse">Mouse</option><option value="joystick">Joystick</option></select></div>
+            <div style="font-size:12px; margin-bottom:12px; color: white;">Kontrol: <select id="control-type" style="padding:3px; background:#333; color:white;"><option value="auto">Otomatik</option><option value="mouse">Mouse</option><option value="joystick">Joystick</option></select></div>
             <button id="btn-play" style="width:100%">OYNA</button>
-            <button id="btn-global-open" style="background:#ff9800; width:100%; margin-top:8px;">REKORLAR</button>
+            <button onclick="document.getElementById('global-modal').style.display='flex'" style="background:#ff9800; width:100%; margin-top:8px;">REKORLAR</button>
         </div>
     </div>
     <div id="global-modal" style="display:none;">
         <div class="box">
-            <h3>GLOBAL REKORLAR</h3>
-            <div style="display:flex; justify-content:center; gap:5px; margin-bottom:10px;">
-                <button class="tab-btn active" id="tab-daily">GÜNLÜK</button>
-                <button class="tab-btn" id="tab-monthly">AYLIK</button>
-                <button class="tab-btn" id="tab-alltime">TÜMÜ</button>
+            <h3 style="color: white;">GLOBAL REKORLAR</h3>
+            <div class="tabs">
+                <button class="tab-btn active" onclick="changeTab('daily', this)">GÜNLÜK</button>
+                <button class="tab-btn" onclick="changeTab('monthly', this)">AYLIK</button>
+                <button class="tab-btn" onclick="changeTab('allTime', this)">TÜMÜ</button>
             </div>
-            <div id="global-list" style="text-align:left; max-height:200px; overflow-y:auto; font-size:13px; color:white;"></div>
-            <button id="btn-global-close" style="background:#555; margin-top:15px; color:white;">KAPAT</button>
+            <div id="global-list" style="text-align:left; max-height:200px; overflow-y:auto; font-size:13px; color: white;"></div>
+            <button onclick="document.getElementById('global-modal').style.display='none'" style="background:#555; margin-top:15px; color: white;">KAPAT</button>
         </div>
     </div>
     <div id="boost-container"><div id="boost-bar"></div></div>
     <div id="leaderboard" style="display:none;"><div id="lb-list"></div><div id="lb-player" class="lb-own"></div></div>
     <div id="minimap" style="display:none;"><canvas id="minimap-canvas" width="125" height="125"></canvas></div>
-    <div id="joystick-zone" style="position:fixed; bottom:30px; left:30px; width:120px; height:120px; z-index:50; display:none; pointer-events:auto;"></div>
-    <div id="btn-boost-mob" class="btn-round">BOOST</div><div id="btn-eject-mob" class="btn-round">AT</div>
-    <div id="death-overlay" style="display:none;"><div class="box"><h1>ÖLDÜN!</h1><p id="final-score" style="color:white"></p><button id="btn-restart" style="color:white">TEKRAR DENE</button></div></div>
+    <div id="joystick-zone" style="position:fixed; bottom:30px; left:30px; width:120px; height:120px; z-index:50; display:none;"></div>
+    <div id="btn-boost-mob" class="btn-round">BOOST</div>
+    <div id="btn-eject-mob" class="btn-round">AT</div>
+    <div id="death-overlay" style="display:none;"><div class="box"><h1 style="color: white;">ÖLDÜN!</h1><p id="final-score" style="color: white;"></p><button onclick="location.reload()" style="color: white;">TEKRAR DENE</button></div></div>
     <canvas id="gameCanvas"></canvas>
     <script src="/socket.io/socket.io.js"></script>
     <script src="game.js"></script>
