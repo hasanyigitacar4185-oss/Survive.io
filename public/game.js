@@ -7,6 +7,7 @@ const boostBar = document.getElementById('boost-bar');
 const socket = io();
 
 let allPlayers = {}, allFoods = [], viruses = [], ejectedMasses = [], mapSize = 15000;
+let particles = []; // Patlama efekti için
 let isAlive = false, controlType = "mouse", globalData = { daily: [], allTime: [] }, boostCharge = 100;
 let lastPingTime = 0, currentPing = 0, eatEffect = 0;
 
@@ -29,6 +30,26 @@ socket.on('updateViruses', (v) => viruses = v);
 socket.on('foodCollected', (data) => { if(allFoods[data.i]) { allFoods[data.i] = data.newF; if(isAlive) eatEffect = 15; } });
 socket.on('updateState', (data) => { allPlayers = { ...data.players, ...data.bots }; ejectedMasses = data.ejectedMasses; });
 socket.on('globalScoresUpdate', (data) => { globalData = data; renderGlobalScores(); });
+
+// Ses çalma fonksiyonu
+socket.on('playSfx', (type) => {
+    const audio = document.getElementById('sfx-' + type);
+    if(audio) { audio.currentTime = 0; audio.play().catch(()=>{}); }
+});
+
+// Patlama efekti fonksiyonu
+socket.on('virusHitEffect', (data) => {
+    for(let i=0; i<20; i++) {
+        particles.push({
+            x: data.x, y: data.y,
+            vx: (Math.random() - 0.5) * 15,
+            vy: (Math.random() - 0.5) * 15,
+            r: Math.random() * 5 + 2,
+            c: data.color,
+            life: 1.0
+        });
+    }
+});
 
 function renderGlobalScores() {
     const list = document.getElementById('global-list');
@@ -66,10 +87,10 @@ window.addEventListener('mousemove', (e) => {
 window.addEventListener('mousedown', (e) => {
     if(!isAlive) return;
     if(e.button === 0) socket.emit('ejectMass');
-    if(e.button === 2) socket.emit('triggerBoost');
+    if(e.button === 2) { socket.emit('triggerBoost'); document.getElementById('sfx-boost').play().catch(()=>{}); }
 });
 
-document.getElementById('btn-boost-mob').ontouchstart = (e) => { e.preventDefault(); socket.emit('triggerBoost'); };
+document.getElementById('btn-boost-mob').ontouchstart = (e) => { e.preventDefault(); socket.emit('triggerBoost'); document.getElementById('sfx-boost').play().catch(()=>{}); };
 document.getElementById('btn-eject-mob').ontouchstart = (e) => { e.preventDefault(); socket.emit('ejectMass'); };
 
 socket.on('boostActivated', () => { boostCharge = 0; });
@@ -84,10 +105,8 @@ function draw() {
         boostBar.style.width = boostCharge + "%";
         boostBar.style.background = boostCharge >= 100 ? "#4CAF50" : "#fff";
 
-        // --- GELİŞMİŞ DİNAMİK ZOOM (Ekran Kaplamayı Önler) ---
-        // Radius arttıkça zoom daha güçlü bir şekilde azalır
         let zoom = Math.pow(isMobile ? 22 : 28, 0.5) / Math.pow(me.radius, 0.5);
-        if (zoom < 0.1) zoom = 0.1; // Minimum zoom sınırı (Çok devleşince bile ekranı görmenizi sağlar)
+        if (zoom < 0.1) zoom = 0.1;
 
         ctx.save();
         ctx.translate(canvas.width/2, canvas.height/2);
@@ -101,16 +120,34 @@ function draw() {
         ctx.stroke();
         ctx.strokeStyle = '#ff3333'; ctx.lineWidth = 20; ctx.strokeRect(0,0,mapSize,mapSize);
 
+        // --- DİNAMİK YEM ÇİZİMİ (Veri ve FPS Tasarrufu) ---
+        // Sadece me.radius'a bağlı bir alandaki en yakın ~250 yemeği çiziyoruz
+        let visibleLimit = me.radius > 500 ? 250 : 200;
+        let viewDist = (3000 / zoom); // Zoom'a göre alanı genişlet
+        let drawCount = 0;
+
         for(let f of allFoods) {
-            if (Math.abs(me.x - f.x) < 4000 && Math.abs(me.y - f.y) < 4000) {
+            if (Math.abs(me.x - f.x) < viewDist && Math.abs(me.y - f.y) < viewDist) {
                 ctx.fillStyle = f.c; ctx.beginPath(); ctx.arc(f.x, f.y, f.r, 0, Math.PI*2); ctx.fill();
+                drawCount++;
+                if(drawCount >= visibleLimit) break; // Limite ulaşınca dur
             }
         }
+
         for(let m of ejectedMasses) {
             ctx.fillStyle = m.c; ctx.beginPath(); ctx.arc(m.x, m.y, m.r, 0, Math.PI*2); ctx.fill();
             ctx.strokeStyle = 'black'; ctx.lineWidth = 2; ctx.stroke();
         }
         for(let v of viruses) drawVirus(v.x, v.y, v.r);
+        
+        // Parçacıkları Çiz (Efektler)
+        particles.forEach((p, i) => {
+            p.x += p.vx; p.y += p.vy; p.life -= 0.02;
+            ctx.globalAlpha = p.life; ctx.fillStyle = p.c; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI*2); ctx.fill();
+            if(p.life <= 0) particles.splice(i, 1);
+        });
+        ctx.globalAlpha = 1.0;
+
         for(let id in allPlayers) drawJellyPlayer(allPlayers[id]);
         
         ctx.restore();
@@ -161,8 +198,6 @@ function drawJellyPlayer(p) {
     ctx.fillStyle="black"; ctx.beginPath(); ctx.arc(p.radius*0.35+4, -p.radius*0.2, p.radius*0.1, 0, 7); ctx.arc(p.radius*0.35+4, p.radius*0.2, p.radius*0.1, 0, 7); ctx.fill();
     ctx.restore();
     
-    // --- İSİM ÖLÇEKLENDİRME ---
-    // İsim boyutu da radius ile orantılı artmalı ki devleşince okunabilsin
     let fontSize = Math.max(16, p.radius * 0.2);
     ctx.fillStyle = "white"; ctx.font = `bold ${fontSize}px Arial`; ctx.textAlign = "center"; 
     ctx.fillText(p.name, p.x, p.y - p.radius - (fontSize * 0.8));
