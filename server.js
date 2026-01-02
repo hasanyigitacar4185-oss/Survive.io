@@ -50,7 +50,6 @@ for (let i = 0; i < FOOD_COUNT; i++) foods.push(spawnFood(i));
 function spawnVirus() { return { x: Math.random() * (MAP_SIZE - 1000) + 500, y: Math.random() * (MAP_SIZE - 1000) + 500, r: 90 }; }
 for (let i = 0; i < VIRUS_COUNT; i++) viruses.push(spawnVirus());
 
-// --- BOT SİSTEMİ ---
 function createBot(id) {
     const startScore = Math.floor(Math.random() * 2500);
     let name = botNames[Math.floor(Math.random() * botNames.length)];
@@ -91,6 +90,7 @@ io.on('connection', async (socket) => {
             color: `hsl(${Math.random() * 360}, 80%, 60%)`, radius: INITIAL_RADIUS,
             targetX: 0, targetY: 0, score: 0, lastBoost: 0, isBoosting: false
         };
+        // Başlangıçta tüm yemekleri değil, sadece genel bilgiyi gönderiyoruz
         socket.emit('initGameData', { foods, viruses });
         checkBots();
     });
@@ -115,6 +115,7 @@ io.on('connection', async (socket) => {
                 owner: socket.id, x: p.x + Math.cos(angle)*(p.radius + 20), y: p.y + Math.sin(angle)*(p.radius + 20), 
                 c: p.color, r: 20, angle: angle, speed: 25, spawnTime: Date.now() 
             });
+            socket.emit('playSfx', 'eject');
         }
     });
 
@@ -132,12 +133,8 @@ setInterval(() => {
     const pCount = Object.keys(players).length;
     if (pCount === 0) return;
 
-    // Ejected Mass Hareketi
-    ejectedMasses.forEach((m, idx) => {
-        if (m.speed > 0) { 
-            m.x += Math.cos(m.angle)*m.speed; m.y += Math.sin(m.angle)*m.speed; 
-            m.speed *= 0.92; if(m.speed < 1) m.speed = 0; 
-        }
+    ejectedMasses.forEach((m) => {
+        if (m.speed > 0) { m.x += Math.cos(m.angle)*m.speed; m.y += Math.sin(m.angle)*m.speed; m.speed *= 0.92; if(m.speed < 1) m.speed = 0; }
         m.x = Math.max(20, Math.min(MAP_SIZE-20, m.x)); m.y = Math.max(20, Math.min(MAP_SIZE-20, m.y));
     });
 
@@ -162,62 +159,69 @@ setInterval(() => {
                 } else { p.angle += (Math.random() - 0.5) * 0.2; }
                 p.thinkTimer = 0;
             }
-            let speed = 5.5 * Math.pow(p.radius / INITIAL_RADIUS, -0.15);
+            // Bot hızı 1.5 kat artırıldı (5.5 -> 8.25)
+            let speed = 8.25 * Math.pow(p.radius / INITIAL_RADIUS, -0.15);
             p.x += Math.cos(p.angle) * speed; p.y += Math.sin(p.angle) * speed;
             p.targetX = Math.cos(p.angle) * 100; p.targetY = Math.sin(p.angle) * 100;
         } else {
             let angle = Math.atan2(p.targetY, p.targetX);
             let dist = Math.sqrt(p.targetX * p.targetX + p.targetY * p.targetY);
             if (dist > 5) {
-                let speed = (p.isBoosting ? 18 : 6.5) * Math.pow(p.radius / INITIAL_RADIUS, -0.15);
+                // Oyuncu hızı 1.5 kat artırıldı (Boosting: 18->27, Normal: 6.5->9.75)
+                let speed = (p.isBoosting ? 27 : 9.75) * Math.pow(p.radius / INITIAL_RADIUS, -0.15);
                 p.x += Math.cos(angle) * (dist < 50 ? (speed * dist / 50) : speed);
                 p.y += Math.sin(angle) * (dist < 50 ? (speed * dist / 50) : speed);
             }
         }
         p.x = Math.max(0, Math.min(MAP_SIZE, p.x)); p.y = Math.max(0, Math.min(MAP_SIZE, p.y));
 
-        // Yemek Mekaniği (Optimizasyon: Botlar sadece oyuncuya yakınsa yer)
         let isNearHuman = false;
-        if(p.isBot) {
-            for(let pid in players) { if(Math.hypot(p.x - players[pid].x, p.y - players[pid].y) < 3000) { isNearHuman = true; break; } }
-        } else { isNearHuman = true; }
+        let humanSocket = null;
+        for(let pid in players) { 
+            if(Math.hypot(p.x - players[pid].x, p.y - players[pid].y) < 3500) { 
+                isNearHuman = true; humanSocket = pid; break; 
+            } 
+        }
 
         if(isNearHuman) {
             for(let i=0; i<foods.length; i++) {
                 let f = foods[i];
                 if (Math.abs(p.x - f.x) < p.radius && Math.abs(p.y - f.y) < p.radius) {
                     p.score += 2; p.radius = calculateRadius(p.score);
+                    // Ses ve güncelleme sadece yakındakilere
+                    if(!p.isBot) io.to(id).emit('playSfx', 'eat');
                     io.emit('foodCollected', { i: i, newF: spawnFood(i) });
                 }
             }
         }
 
-        // Atılan Parçaları Yeme (Shooting Mekaniği)
         ejectedMasses.forEach((m, idx) => {
             if (Math.hypot(p.x - m.x, p.y - m.y) < p.radius) {
-                // Kendi attığını hemen geri yemesini önlemek için 500ms bekle
                 if (m.owner === id && Date.now() - m.spawnTime < 500) return;
                 p.score += EJECT_COST * 0.8; p.radius = calculateRadius(p.score);
+                if(!p.isBot) io.to(id).emit('playSfx', 'eat');
                 ejectedMasses.splice(idx, 1);
             }
         });
 
-        // Birbirini Yeme
         for(let oid in all) {
             if(id === oid) continue;
             let o = all[oid];
             if (o && Math.hypot(p.x - o.x, p.y - o.y) < p.radius && p.score > o.score + EAT_MARGIN) {
                 p.score += Math.floor(o.score * 0.6); p.radius = calculateRadius(p.score);
+                if(!p.isBot) io.to(id).emit('playSfx', 'eat');
                 if(o.isBot) { createBot(oid); }
                 else { io.to(oid).emit('dead', { score: o.score }); delete players[oid]; }
             }
         }
 
-        // Virüs (Sadece yakındaki botları ve oyuncuları etkiler)
         if(isNearHuman) {
             viruses.forEach((v, idx) => {
                 if (Math.hypot(p.x - v.x, p.y - v.y) < p.radius + 15 && p.score > 250) {
                     p.score *= 0.9; p.radius = calculateRadius(p.score);
+                    if(!p.isBot) io.to(id).emit('playSfx', 'virus');
+                    // Patlama efekti için client'a sinyal
+                    io.emit('virusHitEffect', { x: v.x, y: v.y, color: '#ff0000' });
                     viruses.splice(idx, 1); io.emit('updateViruses', viruses);
                     setTimeout(() => { viruses.push(spawnVirus()); io.emit('updateViruses', viruses); }, 30000);
                 }
