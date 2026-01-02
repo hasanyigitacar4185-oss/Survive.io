@@ -27,6 +27,7 @@ const EAT_MARGIN = 5;
 const EJECT_COST = 30; 
 const EJECT_THRESHOLD = 200;
 const BOT_COUNT = 10;
+const BOOST_COOLDOWN = 10000; // 15'ten 10'a indirildi
 
 let players = {};
 let bots = {};
@@ -52,9 +53,8 @@ for (let i = 0; i < VIRUS_COUNT; i++) viruses.push(spawnVirus());
 
 function createBot(id) {
     const startScore = Math.floor(Math.random() * 2500);
-    let name = botNames[Math.floor(Math.random() * botNames.length)];
     bots[id] = {
-        id: id, isBot: true, name: name.substring(0, 8),
+        id: id, isBot: true, name: botNames[Math.floor(Math.random() * botNames.length)].substring(0, 8),
         x: Math.random() * MAP_SIZE, y: Math.random() * MAP_SIZE,
         color: `hsl(${Math.random() * 360}, 60%, 50%)`,
         score: startScore, radius: calculateRadius(startScore),
@@ -72,11 +72,15 @@ function checkBots() {
 
 async function getScores() {
     try {
-        const today = new Date(); today.setHours(0,0,0,0);
-        const daily = await HighScore.find({ date: { $gte: today } }).sort({ score: -1 }).limit(10);
+        const now = new Date();
+        const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+        const daily = await HighScore.find({ date: { $gte: startOfDay } }).sort({ score: -1 }).limit(10);
+        const monthly = await HighScore.find({ date: { $gte: startOfMonth } }).sort({ score: -1 }).limit(10);
         const allTime = await HighScore.find().sort({ score: -1 }).limit(10);
-        return { daily, allTime };
-    } catch (e) { return { daily: [], allTime: [] }; }
+        return { daily, monthly, allTime };
+    } catch (e) { return { daily: [], monthly: [], allTime: [] }; }
 }
 
 io.on('connection', async (socket) => {
@@ -90,7 +94,6 @@ io.on('connection', async (socket) => {
             color: `hsl(${Math.random() * 360}, 80%, 60%)`, radius: INITIAL_RADIUS,
             targetX: 0, targetY: 0, score: 0, lastBoost: 0, isBoosting: false
         };
-        // Başlangıçta tüm yemekleri değil, sadece genel bilgiyi gönderiyoruz
         socket.emit('initGameData', { foods, viruses });
         checkBots();
     });
@@ -99,7 +102,7 @@ io.on('connection', async (socket) => {
 
     socket.on('triggerBoost', () => {
         const p = players[socket.id];
-        if (p && Date.now() - p.lastBoost > 15000) {
+        if (p && Date.now() - p.lastBoost > BOOST_COOLDOWN) {
             p.lastBoost = Date.now(); p.isBoosting = true;
             setTimeout(() => { if(players[socket.id]) players[socket.id].isBoosting = false; }, 1500);
             socket.emit('boostActivated');
@@ -115,7 +118,6 @@ io.on('connection', async (socket) => {
                 owner: socket.id, x: p.x + Math.cos(angle)*(p.radius + 20), y: p.y + Math.sin(angle)*(p.radius + 20), 
                 c: p.color, r: 20, angle: angle, speed: 25, spawnTime: Date.now() 
             });
-            socket.emit('playSfx', 'eject');
         }
     });
 
@@ -159,16 +161,14 @@ setInterval(() => {
                 } else { p.angle += (Math.random() - 0.5) * 0.2; }
                 p.thinkTimer = 0;
             }
-            // Bot hızı 1.5 kat artırıldı (5.5 -> 8.25)
-            let speed = 8.25 * Math.pow(p.radius / INITIAL_RADIUS, -0.15);
+            let speed = 8.25 * Math.pow(p.radius / INITIAL_RADIUS, -0.15); // 1.5x
             p.x += Math.cos(p.angle) * speed; p.y += Math.sin(p.angle) * speed;
             p.targetX = Math.cos(p.angle) * 100; p.targetY = Math.sin(p.angle) * 100;
         } else {
             let angle = Math.atan2(p.targetY, p.targetX);
             let dist = Math.sqrt(p.targetX * p.targetX + p.targetY * p.targetY);
             if (dist > 5) {
-                // Oyuncu hızı 1.5 kat artırıldı (Boosting: 18->27, Normal: 6.5->9.75)
-                let speed = (p.isBoosting ? 27 : 9.75) * Math.pow(p.radius / INITIAL_RADIUS, -0.15);
+                let speed = (p.isBoosting ? 27 : 9.75) * Math.pow(p.radius / INITIAL_RADIUS, -0.15); // 1.5x
                 p.x += Math.cos(angle) * (dist < 50 ? (speed * dist / 50) : speed);
                 p.y += Math.sin(angle) * (dist < 50 ? (speed * dist / 50) : speed);
             }
@@ -188,9 +188,7 @@ setInterval(() => {
                 let f = foods[i];
                 if (Math.abs(p.x - f.x) < p.radius && Math.abs(p.y - f.y) < p.radius) {
                     p.score += 2; p.radius = calculateRadius(p.score);
-                    // Ses ve güncelleme sadece yakındakilere
-                    if(!p.isBot) io.to(id).emit('playSfx', 'eat');
-                    io.emit('foodCollected', { i: i, newF: spawnFood(i) });
+                    io.to(humanSocket).emit('foodCollected', { i: i, newF: spawnFood(i), eaterId: p.id });
                 }
             }
         }
@@ -199,7 +197,7 @@ setInterval(() => {
             if (Math.hypot(p.x - m.x, p.y - m.y) < p.radius) {
                 if (m.owner === id && Date.now() - m.spawnTime < 500) return;
                 p.score += EJECT_COST * 0.8; p.radius = calculateRadius(p.score);
-                if(!p.isBot) io.to(id).emit('playSfx', 'eat');
+                if(!p.isBot) io.to(id).emit('localSfx', 'eat');
                 ejectedMasses.splice(idx, 1);
             }
         });
@@ -209,7 +207,7 @@ setInterval(() => {
             let o = all[oid];
             if (o && Math.hypot(p.x - o.x, p.y - o.y) < p.radius && p.score > o.score + EAT_MARGIN) {
                 p.score += Math.floor(o.score * 0.6); p.radius = calculateRadius(p.score);
-                if(!p.isBot) io.to(id).emit('playSfx', 'eat');
+                if(!p.isBot) io.to(id).emit('localSfx', 'eat');
                 if(o.isBot) { createBot(oid); }
                 else { io.to(oid).emit('dead', { score: o.score }); delete players[oid]; }
             }
@@ -219,9 +217,7 @@ setInterval(() => {
             viruses.forEach((v, idx) => {
                 if (Math.hypot(p.x - v.x, p.y - v.y) < p.radius + 15 && p.score > 250) {
                     p.score *= 0.9; p.radius = calculateRadius(p.score);
-                    if(!p.isBot) io.to(id).emit('playSfx', 'virus');
-                    // Patlama efekti için client'a sinyal
-                    io.emit('virusHitEffect', { x: v.x, y: v.y, color: '#ff0000' });
+                    io.emit('virusHitEffect', { x: v.x, y: v.y, color: '#ff0000', eaterId: p.id });
                     viruses.splice(idx, 1); io.emit('updateViruses', viruses);
                     setTimeout(() => { viruses.push(spawnVirus()); io.emit('updateViruses', viruses); }, 30000);
                 }
