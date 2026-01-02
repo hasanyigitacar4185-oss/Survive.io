@@ -7,8 +7,7 @@ const boostBar = document.getElementById('boost-bar');
 const socket = io();
 
 let allPlayers = {}, allFoods = [], viruses = [], ejectedMasses = [], mapSize = 15000;
-let particles = []; // Patlama efekti için
-let isAlive = false, controlType = "mouse", globalData = { daily: [], allTime: [] }, boostCharge = 100;
+let particles = [], isAlive = false, controlType = "mouse", globalData = { daily:[], monthly:[], allTime:[] }, boostCharge = 100;
 let lastPingTime = 0, currentPing = 0, eatEffect = 0;
 
 const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
@@ -25,36 +24,39 @@ socket.on('heartbeat_res', (t) => {
     pingEl.style.color = currentPing < 100 ? "#00ff00" : (currentPing < 200 ? "#ffff00" : "#ff0000");
 });
 
-socket.on('initGameData', (data) => { allFoods = data.foods; viruses = data.viruses; });
-socket.on('updateViruses', (v) => viruses = v);
-socket.on('foodCollected', (data) => { if(allFoods[data.i]) { allFoods[data.i] = data.newF; if(isAlive) eatEffect = 15; } });
-socket.on('updateState', (data) => { allPlayers = { ...data.players, ...data.bots }; ejectedMasses = data.ejectedMasses; });
-socket.on('globalScoresUpdate', (data) => { globalData = data; renderGlobalScores(); });
-
-// Ses çalma fonksiyonu
-socket.on('playSfx', (type) => {
+function playSfx(type) {
     const audio = document.getElementById('sfx-' + type);
     if(audio) { audio.currentTime = 0; audio.play().catch(()=>{}); }
-});
+}
 
-// Patlama efekti fonksiyonu
+socket.on('initGameData', (data) => { allFoods = data.foods; viruses = data.viruses; });
+socket.on('updateViruses', (v) => viruses = v);
+socket.on('foodCollected', (data) => { 
+    if(allFoods[data.i]) { 
+        allFoods[data.i] = data.newF; 
+        if(isAlive && data.eaterId === socket.id) { eatEffect = 15; playSfx('eat'); } 
+    } 
+});
+socket.on('localSfx', (type) => { if(isAlive) playSfx(type); });
+socket.on('updateState', (data) => { allPlayers = { ...data.players, ...data.bots }; ejectedMasses = data.ejectedMasses; });
+socket.on('globalScoresUpdate', (data) => { globalData = data; renderGlobalScores('daily'); });
+
 socket.on('virusHitEffect', (data) => {
-    for(let i=0; i<20; i++) {
-        particles.push({
-            x: data.x, y: data.y,
-            vx: (Math.random() - 0.5) * 15,
-            vy: (Math.random() - 0.5) * 15,
-            r: Math.random() * 5 + 2,
-            c: data.color,
-            life: 1.0
-        });
+    if(data.eaterId === socket.id) playSfx('virus');
+    for(let i=0; i<30; i++) {
+        particles.push({ x: data.x, y: data.y, vx: (Math.random()-0.5)*20, vy: (Math.random()-0.5)*20, r: Math.random()*6+2, c: data.color, life: 1.0 });
     }
 });
 
-function renderGlobalScores() {
+function changeTab(t, b) { 
+    document.querySelectorAll('.tab-btn').forEach(x=>x.classList.remove('active')); 
+    b.classList.add('active'); renderGlobalScores(t); 
+}
+
+function renderGlobalScores(t) {
     const list = document.getElementById('global-list');
-    const data = globalData.daily || [];
-    list.innerHTML = data.length ? data.map((s,i) => `<div class="lb-item"><span>${i+1}. ${s.name}</span><span>${Math.floor(s.score)}</span></div>`).join('') : "Henüz rekor yok.";
+    const data = globalData[t] || [];
+    list.innerHTML = data.length ? data.map((s,i) => `<div class="lb-item"><span>${i+1}. ${s.name}</span><span>${Math.floor(s.score)}</span></div>`).join('') : "Kayıt yok.";
 }
 
 document.getElementById('btn-play').onclick = () => {
@@ -86,14 +88,14 @@ window.addEventListener('mousemove', (e) => {
 
 window.addEventListener('mousedown', (e) => {
     if(!isAlive) return;
-    if(e.button === 0) socket.emit('ejectMass');
-    if(e.button === 2) { socket.emit('triggerBoost'); document.getElementById('sfx-boost').play().catch(()=>{}); }
+    if(e.button === 0) { socket.emit('ejectMass'); playSfx('eject'); }
+    if(e.button === 2) { socket.emit('triggerBoost'); }
 });
 
-document.getElementById('btn-boost-mob').ontouchstart = (e) => { e.preventDefault(); socket.emit('triggerBoost'); document.getElementById('sfx-boost').play().catch(()=>{}); };
-document.getElementById('btn-eject-mob').ontouchstart = (e) => { e.preventDefault(); socket.emit('ejectMass'); };
+document.getElementById('btn-boost-mob').ontouchstart = (e) => { e.preventDefault(); socket.emit('triggerBoost'); };
+document.getElementById('btn-eject-mob').ontouchstart = (e) => { e.preventDefault(); socket.emit('ejectMass'); playSfx('eject'); };
 
-socket.on('boostActivated', () => { boostCharge = 0; });
+socket.on('boostActivated', () => { boostCharge = 0; playSfx('boost'); });
 socket.on('dead', (d) => { isAlive = false; document.getElementById('final-score').innerText = `Skor: ${Math.floor(d.score)}`; document.getElementById('death-overlay').style.display = 'flex'; });
 
 function draw() {
@@ -101,7 +103,7 @@ function draw() {
     ctx.fillStyle = '#050505'; ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     if (me && isAlive) {
-        if (boostCharge < 100) boostCharge += (100 / (15 * 60));
+        if (boostCharge < 100) boostCharge += (100 / (10 * 60));
         boostBar.style.width = boostCharge + "%";
         boostBar.style.background = boostCharge >= 100 ? "#4CAF50" : "#fff";
 
@@ -113,24 +115,19 @@ function draw() {
         ctx.scale(zoom, zoom);
         ctx.translate(-me.x, -me.y);
 
-        // Izgara
         ctx.strokeStyle = '#121212'; ctx.lineWidth = 4; ctx.beginPath();
         for(let x=0; x<=mapSize; x+=500) { ctx.moveTo(x,0); ctx.lineTo(x,mapSize); }
         for(let y=0; y<=mapSize; y+=500) { ctx.moveTo(0,y); ctx.lineTo(mapSize,y); }
         ctx.stroke();
         ctx.strokeStyle = '#ff3333'; ctx.lineWidth = 20; ctx.strokeRect(0,0,mapSize,mapSize);
 
-        // --- DİNAMİK YEM ÇİZİMİ (Veri ve FPS Tasarrufu) ---
-        // Sadece me.radius'a bağlı bir alandaki en yakın ~250 yemeği çiziyoruz
         let visibleLimit = me.radius > 500 ? 250 : 200;
-        let viewDist = (3000 / zoom); // Zoom'a göre alanı genişlet
+        let viewDist = (3500 / zoom);
         let drawCount = 0;
-
         for(let f of allFoods) {
             if (Math.abs(me.x - f.x) < viewDist && Math.abs(me.y - f.y) < viewDist) {
                 ctx.fillStyle = f.c; ctx.beginPath(); ctx.arc(f.x, f.y, f.r, 0, Math.PI*2); ctx.fill();
-                drawCount++;
-                if(drawCount >= visibleLimit) break; // Limite ulaşınca dur
+                drawCount++; if(drawCount >= visibleLimit) break;
             }
         }
 
@@ -140,7 +137,6 @@ function draw() {
         }
         for(let v of viruses) drawVirus(v.x, v.y, v.r);
         
-        // Parçacıkları Çiz (Efektler)
         particles.forEach((p, i) => {
             p.x += p.vx; p.y += p.vy; p.life -= 0.02;
             ctx.globalAlpha = p.life; ctx.fillStyle = p.c; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI*2); ctx.fill();
@@ -170,7 +166,6 @@ function drawVirus(x, y, r) {
 function drawJellyPlayer(p) {
     const points = 32, time = Date.now() * 0.006, vertices = [];
     const moveAngle = Math.atan2(p.targetY, p.targetX);
-    
     for (let i = 0; i < points; i++) {
         let a = (i / points) * Math.PI * 2;
         let w = Math.sin(time + i * 1.2) * (p.radius * (0.04 + (p.id === socket.id ? eatEffect * 0.005 : 0)));
@@ -183,21 +178,17 @@ function drawJellyPlayer(p) {
         let r = p.radius + w + s - press;
         vertices.push({ x: p.x + Math.cos(a) * r, y: p.y + Math.sin(a) * r });
     }
-
-    ctx.beginPath();
-    ctx.moveTo((vertices[0].x + vertices[points-1].x) / 2, (vertices[0].y + vertices[points-1].y) / 2);
+    ctx.beginPath(); ctx.moveTo((vertices[0].x+vertices[points-1].x)/2, (vertices[0].y+vertices[points-1].y)/2);
     for (let i = 0; i < points; i++) {
         const n = vertices[(i + 1) % points];
         ctx.quadraticCurveTo(vertices[i].x, vertices[i].y, (vertices[i].x + n.x) / 2, (vertices[i].y + n.y) / 2);
     }
     ctx.closePath(); ctx.fillStyle = p.color; ctx.fill(); 
     ctx.strokeStyle = p.isBoosting ? '#fff' : 'rgba(255,255,255,0.7)'; ctx.lineWidth = p.isBoosting ? 8 : 4; ctx.stroke();
-    
     ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(moveAngle);
     ctx.fillStyle="white"; ctx.beginPath(); ctx.arc(p.radius*0.35, -p.radius*0.2, p.radius*0.2, 0, 7); ctx.arc(p.radius*0.35, p.radius*0.2, p.radius*0.2, 0, 7); ctx.fill();
     ctx.fillStyle="black"; ctx.beginPath(); ctx.arc(p.radius*0.35+4, -p.radius*0.2, p.radius*0.1, 0, 7); ctx.arc(p.radius*0.35+4, p.radius*0.2, p.radius*0.1, 0, 7); ctx.fill();
     ctx.restore();
-    
     let fontSize = Math.max(16, p.radius * 0.2);
     ctx.fillStyle = "white"; ctx.font = `bold ${fontSize}px Arial`; ctx.textAlign = "center"; 
     ctx.fillText(p.name, p.x, p.y - p.radius - (fontSize * 0.8));
@@ -214,10 +205,8 @@ function drawMinimap(me) {
     mCtx.clearRect(0,0,130,130); 
     const s = 130 / mapSize; 
     for(let id in allPlayers) {
-        const p = allPlayers[id]; 
-        mCtx.fillStyle = id === socket.id ? "#fff" : "#ff4444";
-        let dotR = p.radius * s; 
-        if(dotR < 2.5) dotR = 2.5;
+        const p = allPlayers[id]; mCtx.fillStyle = id === socket.id ? "#fff" : "#ff4444";
+        let dotR = Math.max(2.5, p.radius * s); 
         mCtx.beginPath(); mCtx.arc(p.x * s, p.y * s, dotR, 0, Math.PI*2); mCtx.fill();
     }
 }
